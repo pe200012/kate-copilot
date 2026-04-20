@@ -16,6 +16,9 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QPointer>
 #include <QPushButton>
@@ -89,11 +92,22 @@ public:
 
     void setCompletion(const QString &text)
     {
-        const QByteArray json = QStringLiteral(
-                                    "data: {\"choices\":[{\"delta\":{\"content\":\"%1\"},\"finish_reason\":null}]}\n\n")
-                                    .arg(text)
-                                    .toUtf8();
-        m_frames = {json, QByteArray("data: [DONE]\n\n")};
+        QJsonObject delta;
+        delta[QStringLiteral("content")] = text;
+
+        QJsonObject choice;
+        choice[QStringLiteral("delta")] = delta;
+        choice[QStringLiteral("finish_reason")] = QJsonValue();
+
+        QJsonArray choices;
+        choices.append(choice);
+
+        QJsonObject obj;
+        obj[QStringLiteral("choices")] = choices;
+
+        const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+        const QByteArray frame = QByteArray("data: ") + payload + QByteArray("\n\n");
+        m_frames = {frame, QByteArray("data: [DONE]\n\n")};
     }
 
     QUrl endpoint() const
@@ -184,6 +198,8 @@ class EditorSessionIntegrationTest : public QObject
 private Q_SLOTS:
     void initTestCase();
     void tracksAnchorThroughDocumentEdits();
+    void ctrlRightAcceptsNextWord();
+    void ctrlAltRightAcceptsNextLine();
     void tabAcceptsStreamedSuggestion();
     void escapeClearsStreamedSuggestion();
     void focusOutClearsStreamedSuggestion();
@@ -207,6 +223,50 @@ void EditorSessionIntegrationTest::tracksAnchorThroughDocumentEdits()
 
     QVERIFY(harness.doc->insertText(KTextEditor::Cursor(0, 0), QStringLiteral("ZZ")));
     QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 8, 2000);
+}
+
+void EditorSessionIntegrationTest::ctrlRightAcceptsNextWord()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("first second third"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.overlay);
+
+    harness.view->editorWidget()->setFocus();
+    QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
+
+    QTest::keyClick(harness.view->editorWidget(), Qt::Key_Right, Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixfirst SUFFIX")), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second third"), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 6 + int(QStringLiteral("first ").size()), 2000);
+}
+
+void EditorSessionIntegrationTest::ctrlAltRightAcceptsNextLine()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("hello\nworld"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.overlay);
+
+    harness.view->editorWidget()->setFocus();
+    QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
+
+    harness.session->acceptNextLine();
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixhello\nSUFFIX")), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->state().visibleText.startsWith(QStringLiteral("world")), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.line, 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 0, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("world"), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.line, 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 0, 2000);
 }
 
 void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()

@@ -90,7 +90,7 @@ namespace
 
 [[nodiscard]] QString shortcutHintText()
 {
-    return i18n("Shortcuts: Tab accepts the visible suggestion. Esc clears it. Completion-popup suppression follows the General checkbox.");
+    return i18n("Shortcuts: Tab accepts the full suggestion. Ctrl+Alt+Shift+Right accepts the next word. Ctrl+Alt+Shift+L accepts the next line. Esc clears the suggestion.");
 }
 
 } // namespace

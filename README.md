@@ -101,8 +101,10 @@ Copilot uses the fixed Codex completions endpoint and stores the GitHub OAuth to
 ## Interaction model
 
 ### Shortcuts
-- `Tab`: accept the visible suggestion
-- `Esc`: clear the visible suggestion
+- `Tab`: accept the full suggestion
+- `Ctrl+Alt+Shift+Right`: accept the next word
+- `Ctrl+Alt+Shift+L`: accept the next line
+- `Esc`: clear the suggestion
 
 ### Runtime behavior
 - The first ghost line starts at the exact cursor x position.

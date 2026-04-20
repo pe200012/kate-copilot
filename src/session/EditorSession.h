@@ -59,6 +59,10 @@ public:
 
     bool eventFilter(QObject *watched, QEvent *event) override;
 
+    // Partial acceptance commands.
+    void acceptNextWord();
+    void acceptNextLine();
+
 private Q_SLOTS:
     void onTextInserted(KTextEditor::View *view, KTextEditor::Cursor position, const QString &text);
     void onCursorPositionChanged(KTextEditor::View *view, KTextEditor::Cursor newPosition);
@@ -80,10 +84,15 @@ private:
     void clearSuggestion();
     void acceptSuggestion();
 
+    void acceptPartial(const QString &chunk);
+
     void setSuppressed(bool suppressed);
 
     [[nodiscard]] bool syncAnchorFromTracker();
     void applyStateToOverlay();
+
+    [[nodiscard]] QString takeNextWordChunk(const QString &remaining) const;
+    [[nodiscard]] QString takeNextLineChunk(const QString &remaining) const;
 
     void showInfo(const QString &text);
     void showError(const QString &text);
@@ -111,6 +120,7 @@ private:
     GhostTextState m_state;
     SuggestionAnchorTracker m_anchorTracker;
     QString m_rawSuggestionText;
+    QString m_acceptedFromSuggestion;
 
     quint64 m_generation = 0;
     quint64 m_activeRequestId = 0;

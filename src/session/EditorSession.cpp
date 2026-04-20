@@ -122,7 +122,8 @@ bool EditorSession::eventFilter(QObject *watched, QEvent *event)
 
     const auto *keyEvent = static_cast<QKeyEvent *>(event);
 
-    const bool suggestionVisible = !m_state.suppressed && !m_state.visibleText.isEmpty() && m_state.anchor.generation == m_generation;
+    const bool suggestionVisible = m_state.anchorTracked && !m_state.suppressed && !m_state.visibleText.isEmpty()
+        && m_state.anchor.generation == m_generation;
     if (!suggestionVisible) {
         return QObject::eventFilter(watched, event);
     }
@@ -134,6 +135,20 @@ bool EditorSession::eventFilter(QObject *watched, QEvent *event)
 
     if (keyEvent->key() == Qt::Key_Escape && keyEvent->modifiers() == Qt::NoModifier) {
         bumpGeneration();
+        return true;
+    }
+
+    const Qt::KeyboardModifiers mods = keyEvent->modifiers();
+
+    if (keyEvent->key() == Qt::Key_Right
+        && (mods == (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier)
+            || mods == (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::KeypadModifier))) {
+        acceptNextWord();
+        return true;
+    }
+
+    if (keyEvent->key() == Qt::Key_L && mods == (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier)) {
+        acceptNextLine();
         return true;
     }
 
@@ -214,7 +229,18 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
     }
 
     m_rawSuggestionText += delta;
-    m_state.visibleText = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
+
+    const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
+    if (!m_acceptedFromSuggestion.isEmpty()) {
+        if (full.startsWith(m_acceptedFromSuggestion)) {
+            m_state.visibleText = full.mid(m_acceptedFromSuggestion.size());
+        } else {
+            bumpGeneration();
+            return;
+        }
+    } else {
+        m_state.visibleText = full;
+    }
 
     applyStateToOverlay();
 }
@@ -424,6 +450,7 @@ void EditorSession::startRequest()
 
     m_state.visibleText.clear();
     m_rawSuggestionText.clear();
+    m_acceptedFromSuggestion.clear();
     m_state.streaming = true;
     m_state.suppressed = false;
 
@@ -441,6 +468,7 @@ void EditorSession::clearSuggestion()
     cleared.anchorTracked = false;
     m_state = cleared;
     m_rawSuggestionText.clear();
+    m_acceptedFromSuggestion.clear();
 
     applyStateToOverlay();
 }
@@ -481,6 +509,122 @@ void EditorSession::acceptSuggestion()
         m_ignoreNextViewSignals = 0;
         showError(i18n("Failed to insert AI completion into document"));
     }
+}
+
+void EditorSession::acceptNextWord()
+{
+    acceptPartial(takeNextWordChunk(m_state.visibleText));
+}
+
+void EditorSession::acceptNextLine()
+{
+    acceptPartial(takeNextLineChunk(m_state.visibleText));
+}
+
+void EditorSession::acceptPartial(const QString &chunk)
+{
+    if (!m_view) {
+        return;
+    }
+
+    if (chunk.isEmpty()) {
+        return;
+    }
+
+    if (m_state.visibleText.isEmpty()) {
+        return;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        bumpGeneration();
+        return;
+    }
+
+    KTextEditor::Document *doc = m_view->document();
+    if (!doc) {
+        return;
+    }
+
+    const KTextEditor::Cursor cursor = m_view->cursorPosition();
+    if (!cursorEquals(cursor, m_state.anchor)) {
+        bumpGeneration();
+        return;
+    }
+
+    if (!m_state.visibleText.startsWith(chunk)) {
+        bumpGeneration();
+        return;
+    }
+
+    m_acceptedFromSuggestion += chunk;
+    m_state.visibleText = m_state.visibleText.mid(chunk.size());
+
+    m_ignoreNextViewSignals = qMax(m_ignoreNextViewSignals, 4);
+    KTextEditor::Document::EditingTransaction transaction(doc);
+    const bool ok = m_view->insertText(chunk);
+    if (!ok) {
+        m_ignoreNextViewSignals = 0;
+        showError(i18n("Failed to insert AI completion into document"));
+        bumpGeneration();
+        return;
+    }
+
+    applyStateToOverlay();
+}
+
+QString EditorSession::takeNextWordChunk(const QString &remaining) const
+{
+    if (remaining.isEmpty()) {
+        return {};
+    }
+
+    const auto isWordChar = [](QChar c) {
+        return c.isLetterOrNumber() || c == QLatin1Char('_');
+    };
+
+    int i = 0;
+
+    const QChar first = remaining.at(0);
+    if (first == QLatin1Char('\n')) {
+        return QString(first);
+    }
+
+    if (first.isSpace()) {
+        while (i < remaining.size() && remaining.at(i).isSpace() && remaining.at(i) != QLatin1Char('\n')) {
+            ++i;
+        }
+        return remaining.left(i);
+    }
+
+    if (isWordChar(first)) {
+        while (i < remaining.size() && isWordChar(remaining.at(i))) {
+            ++i;
+        }
+        while (i < remaining.size() && remaining.at(i).isSpace() && remaining.at(i) != QLatin1Char('\n')) {
+            ++i;
+        }
+        return remaining.left(i);
+    }
+
+    i = 1;
+    while (i < remaining.size() && remaining.at(i).isSpace() && remaining.at(i) != QLatin1Char('\n')) {
+        ++i;
+    }
+    return remaining.left(i);
+}
+
+QString EditorSession::takeNextLineChunk(const QString &remaining) const
+{
+    if (remaining.isEmpty()) {
+        return {};
+    }
+
+    const int idx = remaining.indexOf(QLatin1Char('\n'));
+    if (idx < 0) {
+        return remaining;
+    }
+
+    return remaining.left(idx + 1);
 }
 
 void EditorSession::setSuppressed(bool suppressed)

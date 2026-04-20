@@ -36,6 +36,8 @@ void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Esc")));
+    QVERIFY(shortcutHint->text().contains(QStringLiteral("Ctrl+Alt+Shift+Right")));
+    QVERIFY(shortcutHint->text().contains(QStringLiteral("Ctrl+Alt+Shift+L")));
 
     const int copilotIndex = providerCombo->findData(QStringLiteral("github-copilot-codex"));
     QVERIFY(copilotIndex >= 0);
