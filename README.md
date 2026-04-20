@@ -149,6 +149,9 @@ python tools/eval/kate_ai_eval.py humaneval \
 
 The execution-based evaluation path is containerized under `tools/eval/docker/`.
 
+## License
+This project uses **LGPL-2.0-or-later**. See [`LICENSE`](LICENSE).
+
 ## Key paths
 - Plugin sources: `src/`
 - Tests: `autotests/`
