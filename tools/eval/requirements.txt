@@ -1,0 +1,7 @@
+requests>=2.33
+
+tqdm>=4.67
+fire>=0.7
+numpy>=2.0
+
+datasets>=4.0

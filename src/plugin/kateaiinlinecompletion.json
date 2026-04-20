@@ -1,0 +1,12 @@
+{
+    "KPlugin": {
+        "Id": "kate-ai-inline-completion",
+        "Name": "AI Inline Completion",
+        "Description": "Copilot-like AI inline completion for Kate",
+        "Icon": "tools-wizard",
+        "Version": "0.1.0",
+        "License": "LGPL-2.0-or-later",
+        "Category": "Editor",
+        "EnabledByDefault": false
+    }
+}

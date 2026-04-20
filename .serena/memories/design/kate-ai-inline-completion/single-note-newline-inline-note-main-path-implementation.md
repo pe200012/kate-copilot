@@ -1,0 +1,23 @@
+2026-04-20：运行时主路径切到“单个 InlineNote + 完整 suggestion 多行字符串”。
+
+- 设计文档：`docs/plans/2026-04-20-kate-ai-single-note-newline-inline-note-design.md`
+- 生产实现：`src/render/GhostTextInlineNoteProvider.cpp`
+  - `inlineNotes(line)` 仅在锚点行返回 `{anchor.column}`。
+  - `inlineNoteSize()` 使用 suggestion 各逻辑行最大像素宽度，高度保持 `note.lineHeight()`。
+  - `paintInlineNote()` 直接调用 `painter.drawText(rect, hAlign | Qt::AlignVCenter, m_state.visibleText)`，保留 `\n` 与缩进空白。
+- 刷新策略：
+  - anchor 与可见状态稳定时，发 `inlineNotesChanged(anchorLine)`。
+  - anchor 或可见状态变化时，发 `inlineNotesReset()`。
+- 调试结论：
+  - `Qt::AlignVCenter` 是让单 note 多行文本向后续行区域延展的关键因素。
+  - `inlineNotesChanged(anchorLine)` 已通过 GUI 动态渲染测试，足以驱动单行→多行扩展。
+- 测试更新：
+  - `autotests/GhostTextInlineNoteProviderTest.cpp` 改为验证单锚点 note 与锚点行刷新。
+  - `autotests/GhostTextInlineNoteProviderRenderingTest.cpp` 新增/扩展：
+    - 单 note newline 字符串静态渲染
+    - 单 note newline 字符串动态更新（lineChanged / reset 两种路径）
+- 关键截图：
+  - `/tmp/kate-ai-inline-note-rendering/single_note_newline_string.png`
+  - `/tmp/kate-ai-inline-note-rendering/single_note_newline_dynamic_changed_line_multiline.png`
+  - `/tmp/kate-ai-inline-note-rendering/single_note_newline_dynamic_reset_multiline.png`
+- 验证：`cmake --build build -j 8 && ctest --test-dir build --output-on-failure` 7/7 passed。
