@@ -39,6 +39,12 @@ void CompletionSettingsTest::defaultsAreValid()
     QVERIFY(d.maxSuffixChars >= CompletionSettings::kSuffixMinChars);
     QVERIFY(d.maxSuffixChars <= CompletionSettings::kSuffixMaxChars);
 
+    QVERIFY(d.enableContextualPrompt);
+    QVERIFY(d.maxContextItems >= CompletionSettings::kContextItemsMin);
+    QVERIFY(d.maxContextItems <= CompletionSettings::kContextItemsMax);
+    QVERIFY(d.maxContextChars >= CompletionSettings::kContextCharsMin);
+    QVERIFY(d.maxContextChars <= CompletionSettings::kContextCharsMax);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -54,6 +60,8 @@ void CompletionSettingsTest::validationClampsBounds()
     s.debounceMs = 1;
     s.maxPrefixChars = 1;
     s.maxSuffixChars = 999999;
+    s.maxContextItems = 999999;
+    s.maxContextChars = 999999;
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
     s.model = QString();
@@ -66,6 +74,8 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.debounceMs, CompletionSettings::kDebounceMinMs);
     QCOMPARE(v.maxPrefixChars, CompletionSettings::kPrefixMinChars);
     QCOMPARE(v.maxSuffixChars, CompletionSettings::kSuffixMaxChars);
+    QCOMPARE(v.maxContextItems, CompletionSettings::kContextItemsMax);
+    QCOMPARE(v.maxContextChars, CompletionSettings::kContextCharsMax);
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
     QVERIFY(!v.endpoint.isRelative());
@@ -103,6 +113,9 @@ void CompletionSettingsTest::roundTripConfig()
     in.endpoint = QUrl(QStringLiteral("http://localhost:11434/v1/chat/completions"));
     in.model = QStringLiteral("qwen2.5");
     in.promptTemplate = QString::fromLatin1(CompletionSettings::kPromptTemplateFimV1);
+    in.enableContextualPrompt = false;
+    in.maxContextItems = 3;
+    in.maxContextChars = 2048;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -119,6 +132,9 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.endpoint, in.endpoint);
     QCOMPARE(out.model, in.model);
     QCOMPARE(out.promptTemplate, in.promptTemplate);
+    QCOMPARE(out.enableContextualPrompt, in.enableContextualPrompt);
+    QCOMPARE(out.maxContextItems, in.maxContextItems);
+    QCOMPARE(out.maxContextChars, in.maxContextChars);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

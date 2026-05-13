@@ -202,6 +202,7 @@ private Q_SLOTS:
     void ctrlRightAcceptsNextWord();
     void ctrlAltRightAcceptsNextLine();
     void tabAcceptsStreamedSuggestion();
+    void tabAcceptsSuggestionWithRestOfLineOverlap();
     void escapeClearsStreamedSuggestion();
     void focusOutClearsStreamedSuggestion();
 };
@@ -313,6 +314,24 @@ void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()
 
     QTRY_VERIFY_WITH_TIMEOUT(!harness.overlay->isActive(), 2000);
     QVERIFY(harness.doc->text().contains(QStringLiteral("prefixghost()SUFFIX")));
+}
+
+void EditorSessionIntegrationTest::tabAcceptsSuggestionWithRestOfLineOverlap()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost()SUFFIX"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+
+    harness.view->editorWidget()->setFocus();
+    QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
+
+    QTest::keyClick(harness.view->editorWidget(), Qt::Key_Tab);
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixghost()SUFFIX\n")), 2000);
+    QVERIFY(!harness.doc->text().contains(QStringLiteral("prefixghost()SUFFIXSUFFIX")));
 }
 
 void EditorSessionIntegrationTest::escapeClearsStreamedSuggestion()

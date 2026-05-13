@@ -24,6 +24,34 @@ ecm_add_test(PromptTemplateTest.cpp
         Qt6::Test
 )
 
+ecm_add_test(ContextProviderRegistryTest.cpp
+    TEST_NAME kateaiinlinecompletion_context_provider_registry_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
+ecm_add_test(PromptAssemblerTest.cpp
+    TEST_NAME kateaiinlinecompletion_prompt_assembler_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_prompt
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
+ecm_add_test(SuggestionPostProcessorTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    TEST_NAME kateaiinlinecompletion_suggestion_post_processor_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_prompt
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_suggestion_post_processor_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 ecm_add_test(GhostTextInlineNoteProviderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     TEST_NAME kateaiinlinecompletion_ghost_text_inline_note_provider_test
@@ -96,6 +124,12 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
@@ -130,6 +164,12 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h

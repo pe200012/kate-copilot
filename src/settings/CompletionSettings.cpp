@@ -82,6 +82,8 @@ CompletionSettings CompletionSettings::validated() const
     out.debounceMs = qBound(kDebounceMinMs, out.debounceMs, kDebounceMaxMs);
     out.maxPrefixChars = qBound(kPrefixMinChars, out.maxPrefixChars, kPrefixMaxChars);
     out.maxSuffixChars = qBound(kSuffixMinChars, out.maxSuffixChars, kSuffixMaxChars);
+    out.maxContextItems = qBound(kContextItemsMin, out.maxContextItems, kContextItemsMax);
+    out.maxContextChars = qBound(kContextCharsMin, out.maxContextChars, kContextCharsMax);
 
     out.provider = out.provider.trimmed().toLower();
     if (!isSupportedProvider(out.provider)) {
@@ -128,6 +130,9 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.debounceMs = group.readEntry("DebounceMs", d.debounceMs);
     out.maxPrefixChars = group.readEntry("MaxPrefixChars", d.maxPrefixChars);
     out.maxSuffixChars = group.readEntry("MaxSuffixChars", d.maxSuffixChars);
+    out.enableContextualPrompt = group.readEntry("EnableContextualPrompt", d.enableContextualPrompt);
+    out.maxContextItems = group.readEntry("MaxContextItems", d.maxContextItems);
+    out.maxContextChars = group.readEntry("MaxContextChars", d.maxContextChars);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -150,6 +155,9 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("DebounceMs", v.debounceMs);
     group.writeEntry("MaxPrefixChars", v.maxPrefixChars);
     group.writeEntry("MaxSuffixChars", v.maxSuffixChars);
+    group.writeEntry("EnableContextualPrompt", v.enableContextualPrompt);
+    group.writeEntry("MaxContextItems", v.maxContextItems);
+    group.writeEntry("MaxContextChars", v.maxContextChars);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

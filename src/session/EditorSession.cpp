@@ -8,14 +8,20 @@
 #include "session/EditorSession.h"
 
 #include "auth/CopilotAuthManager.h"
+#include "context/ContextProviderRegistry.h"
+#include "context/CurrentFileContextProvider.h"
+#include "context/OpenTabsContextProvider.h"
+#include "context/ProjectTraitsContextProvider.h"
 #include "network/AbstractAIProvider.h"
 #include "network/CopilotCodexProvider.h"
 #include "network/OpenAICompatibleProvider.h"
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "prompt/CopilotCodexPromptBuilder.h"
+#include "prompt/PromptAssembler.h"
 #include "prompt/PromptTemplate.h"
 #include "render/GhostTextInlineNoteProvider.h"
 #include "render/GhostTextOverlayWidget.h"
+#include "session/SuggestionPostProcessor.h"
 #include "settings/CompletionSettings.h"
 #include "settings/KWalletSecretStore.h"
 
@@ -31,12 +37,97 @@
 #include <QVariantMap>
 #include <QWidget>
 
+#include <limits>
+#include <memory>
+
 namespace KateAiInlineCompletion
 {
 
 static bool cursorEquals(const KTextEditor::Cursor &a, const SuggestionAnchor &b)
 {
     return a.line() == b.line && a.column() == b.column;
+}
+
+static QString documentDisplayPath(KTextEditor::Document *doc)
+{
+    if (!doc) {
+        return {};
+    }
+
+    if (doc->url().isValid() && !doc->url().isEmpty()) {
+        return doc->url().toDisplayString(QUrl::PreferLocalFile);
+    }
+
+    return doc->documentName();
+}
+
+static PromptAssemblyOptions promptAssemblyOptionsFromSettings(const CompletionSettings &settings)
+{
+    PromptAssemblyOptions options;
+    options.enabled = settings.enableContextualPrompt;
+    options.maxContextItems = settings.maxContextItems;
+    options.maxContextChars = settings.maxContextChars;
+    return options;
+}
+
+static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *view,
+                                                          KTextEditor::Document *doc,
+                                                          const CompletionSettings &settings,
+                                                          const PromptContext &promptCtx,
+                                                          const KTextEditor::Cursor &cursor,
+                                                          quint64 generation)
+{
+    if (!view || !doc || !settings.enableContextualPrompt || settings.maxContextItems <= 0 || settings.maxContextChars <= 0) {
+        return {};
+    }
+
+    ContextResolveRequest contextRequest;
+    contextRequest.completionId = QString::number(generation);
+    contextRequest.opportunityId = QStringLiteral("view:%1:%2:%3")
+                                       .arg(static_cast<qulonglong>(reinterpret_cast<quintptr>(view)))
+                                       .arg(cursor.line())
+                                       .arg(cursor.column());
+    contextRequest.uri = promptCtx.filePath;
+    contextRequest.languageId = promptCtx.language;
+    contextRequest.version = static_cast<int>(qBound<qint64>(0, doc->revision(), static_cast<qint64>(std::numeric_limits<int>::max())));
+    contextRequest.position = cursor;
+    contextRequest.timeBudgetMs = 120;
+
+    ContextProviderRegistry registry;
+    registry.addProvider(std::make_unique<CurrentFileContextProvider>());
+    registry.addProvider(std::make_unique<ProjectTraitsContextProvider>());
+    registry.addProvider(std::make_unique<OpenTabsContextProvider>(view->mainWindow(), view));
+
+    return registry.resolve(contextRequest, settings.maxContextItems);
+}
+
+static QString nextNonEmptyLineAfter(KTextEditor::Document *doc, int line)
+{
+    if (!doc) {
+        return {};
+    }
+
+    for (int i = line + 1; i < doc->lines(); ++i) {
+        const QString text = doc->line(i);
+        if (!text.trimmed().isEmpty()) {
+            return text;
+        }
+    }
+
+    return {};
+}
+
+static SuggestionProcessingContext suggestionProcessingContext(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
+{
+    SuggestionProcessingContext ctx;
+    ctx.cursor = cursor;
+
+    if (doc && cursor.isValid() && cursor.line() >= 0 && cursor.line() < doc->lines()) {
+        ctx.currentLineSuffix = doc->line(cursor.line()).mid(cursor.column());
+        ctx.nextNonEmptyLine = nextNonEmptyLineAfter(doc, cursor.line());
+    }
+
+    return ctx;
 }
 
 EditorSession::EditorSession(KTextEditor::View *view,
@@ -241,16 +332,31 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
 
     m_rawSuggestionText += delta;
 
-    const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
+    QString textToProcess = m_rawSuggestionText;
     if (!m_acceptedFromSuggestion.isEmpty()) {
+        const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
         if (full.startsWith(m_acceptedFromSuggestion)) {
-            m_state.visibleText = full.mid(m_acceptedFromSuggestion.size());
+            textToProcess = full.mid(m_acceptedFromSuggestion.size());
         } else {
             bumpGeneration();
             return;
         }
+    }
+
+    KTextEditor::Document *doc = m_view ? m_view->document() : nullptr;
+    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
+    const ProcessedSuggestion processed = SuggestionPostProcessor::process(textToProcess, suggestionProcessingContext(doc, anchorCursor));
+
+    if (processed.valid) {
+        m_state.visibleText = processed.displayText;
+        m_state.insertText = processed.insertText;
+        m_state.replaceRange = processed.replaceRange;
+        m_state.suffixCoverage = processed.suffixCoverage;
     } else {
-        m_state.visibleText = full;
+        m_state.visibleText.clear();
+        m_state.insertText.clear();
+        m_state.replaceRange = KTextEditor::Range::invalid();
+        m_state.suffixCoverage = 0;
     }
 
     applyStateToOverlay();
@@ -405,12 +511,7 @@ void EditorSession::startRequest()
         return;
     }
 
-    QString filePath;
-    if (doc->url().isValid() && !doc->url().isEmpty()) {
-        filePath = doc->url().toDisplayString(QUrl::PreferLocalFile);
-    } else {
-        filePath = doc->documentName();
-    }
+    const QString filePath = documentDisplayPath(doc);
 
     PromptContext promptCtx;
     promptCtx.filePath = filePath;
@@ -420,6 +521,9 @@ void EditorSession::startRequest()
     promptCtx.prefix = prefix;
     promptCtx.suffix = suffix;
 
+    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, settings, promptCtx, cursor, m_generation);
+    const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
+
     CompletionRequest request;
     request.endpoint = endpoint;
     request.model = settings.model;
@@ -427,7 +531,8 @@ void EditorSession::startRequest()
     request.temperature = 0.2;
 
     if (providerIsCopilot) {
-        const CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
+        CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
+        built.prompt = PromptAssembler::renderContextPrefix(promptCtx, contextItems, assemblyOptions) + built.prompt;
 
         request.prompt = built.prompt;
         request.suffix = built.suffix;
@@ -440,7 +545,7 @@ void EditorSession::startRequest()
         extra[QStringLiteral("trim_by_indentation")] = true;
         request.extra = extra;
     } else {
-        const BuiltPrompt built = PromptTemplate::build(settings.promptTemplate, promptCtx);
+        const BuiltPrompt built = PromptAssembler::build(settings.promptTemplate, promptCtx, contextItems, assemblyOptions);
 
         request.apiKey = apiKey;
         request.systemPrompt = built.systemPrompt;
@@ -460,6 +565,9 @@ void EditorSession::startRequest()
     (void)syncAnchorFromTracker();
 
     m_state.visibleText.clear();
+    m_state.insertText.clear();
+    m_state.replaceRange = KTextEditor::Range::invalid();
+    m_state.suffixCoverage = 0;
     m_rawSuggestionText.clear();
     m_acceptedFromSuggestion.clear();
     m_state.streaming = true;
@@ -531,12 +639,18 @@ void EditorSession::acceptSuggestion()
         return;
     }
 
-    const QString toInsert = m_state.visibleText;
+    const QString toInsert = m_state.insertText.isEmpty() ? m_state.visibleText : m_state.insertText;
+    const KTextEditor::Range replaceRange = m_state.replaceRange.isValid() ? m_state.replaceRange : KTextEditor::Range(cursor, cursor);
+
+    if (replaceRange.start() != cursor || replaceRange.end().line() != cursor.line() || replaceRange.end().column() < cursor.column()) {
+        bumpGeneration();
+        return;
+    }
 
     bumpGeneration();
-    m_ignoreNextViewSignals = 2;
+    m_ignoreNextViewSignals = 4;
     KTextEditor::Document::EditingTransaction transaction(doc);
-    const bool ok = m_view->insertText(toInsert);
+    const bool ok = doc->replaceText(replaceRange, toInsert);
     if (!ok) {
         m_ignoreNextViewSignals = 0;
         showError(i18n("Failed to insert AI completion into document"));
@@ -589,7 +703,7 @@ void EditorSession::acceptPartial(const QString &chunk)
     }
 
     m_acceptedFromSuggestion += chunk;
-    m_state.visibleText = m_state.visibleText.mid(chunk.size());
+    const QString remaining = m_state.visibleText.mid(chunk.size());
 
     m_ignoreNextViewSignals = qMax(m_ignoreNextViewSignals, 4);
     KTextEditor::Document::EditingTransaction transaction(doc);
@@ -599,6 +713,25 @@ void EditorSession::acceptPartial(const QString &chunk)
         showError(i18n("Failed to insert AI completion into document"));
         bumpGeneration();
         return;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        bumpGeneration();
+        return;
+    }
+
+    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
+    const ProcessedSuggestion processed = SuggestionPostProcessor::process(remaining, suggestionProcessingContext(doc, anchorCursor));
+    if (processed.valid) {
+        m_state.visibleText = processed.displayText;
+        m_state.insertText = processed.insertText;
+        m_state.replaceRange = processed.replaceRange;
+        m_state.suffixCoverage = processed.suffixCoverage;
+    } else {
+        m_state.visibleText.clear();
+        m_state.insertText.clear();
+        m_state.replaceRange = KTextEditor::Range::invalid();
+        m_state.suffixCoverage = 0;
     }
 
     applyStateToOverlay();

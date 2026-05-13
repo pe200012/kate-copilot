@@ -31,6 +31,10 @@ struct CompletionSettings {
     static constexpr int kPrefixMaxChars = 20000;
     static constexpr int kSuffixMinChars = 0;
     static constexpr int kSuffixMaxChars = 8000;
+    static constexpr int kContextItemsMin = 0;
+    static constexpr int kContextItemsMax = 20;
+    static constexpr int kContextCharsMin = 0;
+    static constexpr int kContextCharsMax = 30000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -51,6 +55,10 @@ struct CompletionSettings {
     QUrl endpoint = QUrl(QStringLiteral("https://api.openai.com/v1/chat/completions"));
     QString model = QStringLiteral("gpt-4o-mini");
     QString promptTemplate = QString::fromLatin1(kPromptTemplateFimV3);
+
+    bool enableContextualPrompt = true;
+    int maxContextItems = 6;
+    int maxContextChars = 6000;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

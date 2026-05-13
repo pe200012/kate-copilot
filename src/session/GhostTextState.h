@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <KTextEditor/Range>
+
 #include <QString>
 
 #include <cstdint>
@@ -26,6 +28,9 @@ struct GhostTextState {
     SuggestionAnchor anchor;
     bool anchorTracked = false;
     QString visibleText;
+    QString insertText;
+    KTextEditor::Range replaceRange = KTextEditor::Range::invalid();
+    int suffixCoverage = 0;
     bool streaming = false;
     bool suppressed = false;
 };

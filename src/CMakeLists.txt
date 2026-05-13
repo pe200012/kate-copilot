@@ -54,12 +54,34 @@ target_link_libraries(kateaiinlinecompletion_sse
         Qt6::Core
 )
 
+add_library(kateaiinlinecompletion_context STATIC)
+
+target_sources(kateaiinlinecompletion_context
+    PRIVATE
+        context/ContextProviderRegistry.cpp
+        context/CurrentFileContextProvider.cpp
+        context/ProjectTraitsContextProvider.cpp
+        context/OpenTabsContextProvider.cpp
+)
+
+target_include_directories(kateaiinlinecompletion_context
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(kateaiinlinecompletion_context
+    PUBLIC
+        Qt6::Core
+        KF6::TextEditor
+)
+
 add_library(kateaiinlinecompletion_prompt STATIC)
 
 target_sources(kateaiinlinecompletion_prompt
     PRIVATE
         prompt/PromptTemplate.cpp
         prompt/CopilotCodexPromptBuilder.cpp
+        prompt/PromptAssembler.cpp
 )
 
 target_include_directories(kateaiinlinecompletion_prompt
@@ -70,6 +92,7 @@ target_include_directories(kateaiinlinecompletion_prompt
 target_link_libraries(kateaiinlinecompletion_prompt
     PUBLIC
         kateaiinlinecompletion_settings
+        kateaiinlinecompletion_context
         Qt6::Core
         KF6::TextEditor
 )
@@ -98,6 +121,7 @@ set_target_properties(
     kateaiinlinecompletion_secrets
     kateaiinlinecompletion_sse
     kateaiinlinecompletion_prompt
+    kateaiinlinecompletion_context
     kateaiinlinecompletion_auth
     PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
@@ -117,6 +141,8 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         session/GhostTextState.h
         session/SuggestionAnchorTracker.cpp
         session/SuggestionAnchorTracker.h
+        session/SuggestionPostProcessor.cpp
+        session/SuggestionPostProcessor.h
 
         render/GhostTextInlineNoteProvider.cpp
         render/GhostTextInlineNoteProvider.h
@@ -130,6 +156,15 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         network/OpenAICompatibleProvider.h
         network/CopilotCodexProvider.cpp
         network/CopilotCodexProvider.h
+
+        context/ContextItem.h
+        context/ContextProvider.h
+        context/ContextProviderRegistry.h
+        context/CurrentFileContextProvider.h
+        context/ProjectTraitsContextProvider.h
+        context/OpenTabsContextProvider.h
+
+        prompt/PromptAssembler.h
 
         plugin/kateaiinlinecompletion.json
     INSTALL_NAMESPACE "kf6/ktexteditor"
@@ -145,6 +180,7 @@ target_link_libraries(kateaiinlinecompletion
         kateaiinlinecompletion_settings
         kateaiinlinecompletion_secrets
         kateaiinlinecompletion_sse
+        kateaiinlinecompletion_context
         kateaiinlinecompletion_prompt
         kateaiinlinecompletion_auth
         Qt6::Widgets
