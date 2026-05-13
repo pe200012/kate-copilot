@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build-test:
+    name: Ubuntu Qt6/KF6 build and tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            extra-cmake-modules \
+            ninja-build \
+            xvfb \
+            libxkbcommon-x11-0 \
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-tools-dev \
+            libkf6config-dev \
+            libkf6coreaddons-dev \
+            libkf6i18n-dev \
+            libkf6texteditor-dev \
+            libkf6wallet-dev \
+            libkf6xmlgui-dev
+
+      - name: Configure
+        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build -j2
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          KDE_DEBUG: 1
+        run: xvfb-run --auto-servernum ctest --test-dir build --output-on-failure
