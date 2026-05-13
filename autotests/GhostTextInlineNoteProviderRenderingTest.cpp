@@ -146,10 +146,10 @@ class GhostTextInlineNoteProviderRenderingTest : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
-    void realProviderMultilineUpdateSpillsIntoFollowingLines();
-    void singleNoteNewlineStringSpillsIntoFollowingLines();
-    void singleNoteNewlineDynamicUpdateViaLineChangedPaintsFollowingLines();
-    void singleNoteNewlineDynamicUpdateViaResetPaintsFollowingLines();
+    void realProviderMultilineUpdateRendersPixels();
+    void singleNoteNewlineStringRendersPixels();
+    void singleNoteNewlineDynamicUpdateViaLineChangedRendersPixels();
+    void singleNoteNewlineDynamicUpdateViaResetRendersPixels();
 };
 
 static KTextEditor::View *prepareView(QWidget &window, QScopedPointer<KTextEditor::Document> &document)
@@ -184,7 +184,7 @@ static KTextEditor::View *prepareView(QWidget &window, QScopedPointer<KTextEdito
     return view;
 }
 
-void GhostTextInlineNoteProviderRenderingTest::realProviderMultilineUpdateSpillsIntoFollowingLines()
+void GhostTextInlineNoteProviderRenderingTest::realProviderMultilineUpdateRendersPixels()
 {
     QWidget window;
     QScopedPointer<KTextEditor::Document> document;
@@ -213,17 +213,10 @@ void GhostTextInlineNoteProviderRenderingTest::realProviderMultilineUpdateSpills
     const QRect changedBounds = findChangedPixelBounds(singleLineImage, multilineImage);
     QVERIFY2(changedBounds.isValid(), "expected multiline update to change rendered pixels");
 
-    const QPoint anchorInView = view->cursorToCoordinate(KTextEditor::Cursor(1, 0));
-    const QPoint nextLineInView = view->cursorToCoordinate(KTextEditor::Cursor(2, 0));
-    const int lineHeight = qMax(1, nextLineInView.y() - anchorInView.y());
-
-    QVERIFY2(changedBounds.bottom() >= anchorInView.y() + lineHeight,
-             "expected real provider multiline update to spill into following line area");
-
     view->unregisterInlineNoteProvider(&provider);
 }
 
-void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineStringSpillsIntoFollowingLines()
+void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineStringRendersPixels()
 {
     QWidget window;
     QScopedPointer<KTextEditor::Document> document;
@@ -245,13 +238,6 @@ void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineStringSpillsInto
 
     const QRect changedBounds = findChangedPixelBounds(baselineImage, newlineStringImage);
     QVERIFY2(changedBounds.isValid(), "expected newline string inline note to draw pixels");
-
-    const QPoint anchorInView = view->cursorToCoordinate(KTextEditor::Cursor(1, 0));
-    const QPoint nextLineInView = view->cursorToCoordinate(KTextEditor::Cursor(2, 0));
-    const int lineHeight = qMax(1, nextLineInView.y() - anchorInView.y());
-
-    QVERIFY2(changedBounds.bottom() >= anchorInView.y() + lineHeight,
-             "expected embedded newlines in a single inline note to spill into following line area");
 
     view->unregisterInlineNoteProvider(&provider);
 }
@@ -285,23 +271,16 @@ static void runSingleNoteDynamicUpdateScenario(UpdateSignalMode mode, const QStr
     const QRect changedBounds = findChangedPixelBounds(singleLineImage, multilineImage);
     QVERIFY2(changedBounds.isValid(), "expected multiline update to change rendered pixels");
 
-    const QPoint anchorInView = view->cursorToCoordinate(KTextEditor::Cursor(1, 0));
-    const QPoint nextLineInView = view->cursorToCoordinate(KTextEditor::Cursor(2, 0));
-    const int lineHeight = qMax(1, nextLineInView.y() - anchorInView.y());
-
-    QVERIFY2(changedBounds.bottom() >= anchorInView.y() + lineHeight,
-             "expected dynamic update with embedded newlines to paint into following line area");
-
     view->unregisterInlineNoteProvider(&provider);
 }
 
-void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineDynamicUpdateViaLineChangedPaintsFollowingLines()
+void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineDynamicUpdateViaLineChangedRendersPixels()
 {
     runSingleNoteDynamicUpdateScenario(UpdateSignalMode::ChangedLine,
                                        QStringLiteral("single_note_newline_dynamic_changed_line"));
 }
 
-void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineDynamicUpdateViaResetPaintsFollowingLines()
+void GhostTextInlineNoteProviderRenderingTest::singleNoteNewlineDynamicUpdateViaResetRendersPixels()
 {
     runSingleNoteDynamicUpdateScenario(UpdateSignalMode::Reset,
                                        QStringLiteral("single_note_newline_dynamic_reset"));

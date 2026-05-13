@@ -93,6 +93,15 @@ target_link_libraries(kateaiinlinecompletion_auth
         Qt6::Network
 )
 
+set_target_properties(
+    kateaiinlinecompletion_settings
+    kateaiinlinecompletion_secrets
+    kateaiinlinecompletion_sse
+    kateaiinlinecompletion_prompt
+    kateaiinlinecompletion_auth
+    PROPERTIES POSITION_INDEPENDENT_CODE ON
+)
+
 kcoreaddons_add_plugin(kateaiinlinecompletion
     SOURCES
         plugin/KateAiInlineCompletionPlugin.cpp

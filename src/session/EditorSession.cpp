@@ -92,6 +92,11 @@ EditorSession::EditorSession(KTextEditor::View *view,
             connect(doc, &KTextEditor::Document::textChanged, this, &EditorSession::onDocumentTextChanged);
         }
 
+        connect(m_view, &QObject::destroyed, this, [this] {
+            m_view = nullptr;
+            m_overlay = nullptr;
+        });
+
         if (QWidget *w = m_view->editorWidget()) {
             w->installEventFilter(this);
         }
