@@ -17,6 +17,35 @@
 namespace KateAiInlineCompletion
 {
 
+namespace
+{
+[[nodiscard]] QString classifyCopilotFailure(int statusCode, const QString &detail)
+{
+    const QString clean = detail.trimmed();
+
+    if (statusCode == 401) {
+        return clean.isEmpty() ? QStringLiteral("authentication expired") : QStringLiteral("authentication expired: %1").arg(clean);
+    }
+
+    if (statusCode == 403) {
+        return clean.isEmpty() ? QStringLiteral("subscription or organization access unavailable")
+                               : QStringLiteral("subscription or organization access unavailable: %1").arg(clean);
+    }
+
+    if (statusCode == 429) {
+        return clean.isEmpty() ? QStringLiteral("rate limit reached") : QStringLiteral("rate limit reached: %1").arg(clean);
+    }
+
+    if (clean.contains(QStringLiteral("quota"), Qt::CaseInsensitive)
+        || clean.contains(QStringLiteral("billing"), Qt::CaseInsensitive)
+        || clean.contains(QStringLiteral("entitlement"), Qt::CaseInsensitive)) {
+        return QStringLiteral("quota or entitlement issue: %1").arg(clean);
+    }
+
+    return clean;
+}
+}
+
 CopilotCodexProvider::CopilotCodexProvider(QNetworkAccessManager *manager, CopilotAuthManager *authManager, QObject *parent)
     : AbstractAIProvider(parent)
     , m_manager(manager)
@@ -263,7 +292,9 @@ void CopilotCodexProvider::beginNetworkRequest(quint64 requestId, const QString 
                 detail = errorString;
             }
 
-            Q_EMIT requestFailed(requestId, QStringLiteral("HTTP %1: %2").arg(statusCode).arg(detail));
+            const QString classified = classifyCopilotFailure(statusCode, detail);
+            const QString finalDetail = classified.trimmed().isEmpty() ? errorString : classified;
+            Q_EMIT requestFailed(requestId, QStringLiteral("Copilot HTTP %1: %2").arg(statusCode).arg(finalDetail));
             m_requests.remove(requestId);
             return;
         }

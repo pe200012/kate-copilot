@@ -62,6 +62,7 @@ private Q_SLOTS:
 
     void slotCopilotSignIn();
     void slotCopilotSignOut();
+    void slotCopilotVerifySession();
     void slotCopilotOpenVerificationUri();
     void slotCopilotCopyUserCode();
     void slotCopilotCopyVerificationUri();
@@ -124,6 +125,7 @@ private:
     QLabel *m_copilotStatus = nullptr;
     QPushButton *m_copilotSignIn = nullptr;
     QPushButton *m_copilotSignOut = nullptr;
+    QPushButton *m_copilotVerifySession = nullptr;
 
     QLineEdit *m_copilotVerificationUri = nullptr;
     QPushButton *m_copilotOpenVerificationUri = nullptr;

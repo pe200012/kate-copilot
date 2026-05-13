@@ -30,6 +30,7 @@
 #include <QNetworkRequest>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 namespace
@@ -90,7 +91,59 @@ namespace
 
 [[nodiscard]] QString shortcutHintText()
 {
-    return i18n("Shortcuts: Tab accepts the full suggestion. Ctrl+Alt+Shift+Right accepts the next word. Ctrl+Alt+Shift+L accepts the next line. Esc clears the suggestion.");
+    return i18n("Shortcuts: Tab accepts the full suggestion. Ctrl+Alt+Shift+Right accepts the next word. Ctrl+Alt+Shift+L accepts the next line. Ctrl+Alt+Shift+Space triggers a suggestion. Esc clears the suggestion.");
+}
+
+[[nodiscard]] QString copilotVerifyFailureText(int statusCode, const QString &detail)
+{
+    const QString cleanDetail = detail.trimmed();
+
+    if (statusCode == 401) {
+        return cleanDetail.isEmpty() ? i18n("Copilot verification failed: GitHub OAuth sign-in expired")
+                                     : i18n("Copilot verification failed: GitHub OAuth sign-in expired (%1)", cleanDetail);
+    }
+
+    if (statusCode == 403) {
+        return cleanDetail.isEmpty() ? i18n("Copilot verification failed: subscription or organization access is unavailable")
+                                     : i18n("Copilot verification failed: subscription or organization access is unavailable (%1)", cleanDetail);
+    }
+
+    if (statusCode == 429) {
+        return cleanDetail.isEmpty() ? i18n("Copilot verification failed: rate limit reached")
+                                     : i18n("Copilot verification failed: rate limit reached (%1)", cleanDetail);
+    }
+
+    if (cleanDetail.contains(QStringLiteral("quota"), Qt::CaseInsensitive)
+        || cleanDetail.contains(QStringLiteral("billing"), Qt::CaseInsensitive)
+        || cleanDetail.contains(QStringLiteral("entitlement"), Qt::CaseInsensitive)) {
+        return i18n("Copilot verification failed: quota or entitlement issue (%1)", cleanDetail);
+    }
+
+    return cleanDetail.isEmpty() ? i18n("Copilot verification failed: HTTP %1", statusCode)
+                                 : i18n("Copilot verification failed: HTTP %1 (%2)", statusCode, cleanDetail);
+}
+
+[[nodiscard]] QString extractJsonErrorDetail(const QByteArray &body)
+{
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        return QString::fromUtf8(body).trimmed();
+    }
+
+    const QJsonObject obj = doc.object();
+    const QJsonValue errVal = obj.value(QStringLiteral("error"));
+    if (errVal.isObject()) {
+        const QString msg = errVal.toObject().value(QStringLiteral("message")).toString().trimmed();
+        if (!msg.isEmpty()) {
+            return msg;
+        }
+    }
+    if (errVal.isString()) {
+        return errVal.toString().trimmed();
+    }
+
+    return obj.value(QStringLiteral("message")).toString().trimmed();
 }
 
 } // namespace
@@ -218,6 +271,10 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_copilotSignOut = new QPushButton(i18n("Sign out"), m_copilotBox);
     copilotButtons->addWidget(m_copilotSignOut);
 
+    m_copilotVerifySession = new QPushButton(i18n("Verify session"), m_copilotBox);
+    m_copilotVerifySession->setObjectName(QStringLiteral("copilotVerifySessionButton"));
+    copilotButtons->addWidget(m_copilotVerifySession);
+
     auto *verifyRow = new QHBoxLayout;
     copilotLayout->addLayout(verifyRow);
 
@@ -274,6 +331,7 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
 
     connect(m_copilotSignIn, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotSignIn);
     connect(m_copilotSignOut, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotSignOut);
+    connect(m_copilotVerifySession, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotVerifySession);
     connect(m_copilotOpenVerificationUri, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotOpenVerificationUri);
     connect(m_copilotCopyUserCode, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotCopyUserCode);
     connect(m_copilotCopyVerificationUri, &QPushButton::clicked, this, &KateAiConfigPage::slotCopilotCopyVerificationUri);
@@ -428,6 +486,81 @@ void KateAiConfigPage::slotCopilotSignOut()
     }
 }
 
+void KateAiConfigPage::slotCopilotVerifySession()
+{
+    if (!m_networkManager || !m_secretStore) {
+        return;
+    }
+
+    const QString oauth = m_secretStore->readGitHubOAuthToken().trimmed();
+    if (oauth.isEmpty()) {
+        m_copilotStatus->setText(i18n("Status: signed out"));
+        refreshCopilotStatus();
+        return;
+    }
+
+    m_copilotStatus->setText(i18n("Status: verifying Copilot session"));
+    m_copilotVerifySession->setEnabled(false);
+
+    QNetworkRequest req(QUrl(QStringLiteral("https://api.github.com/copilot_internal/v2/token")));
+    req.setRawHeader("Accept", "application/json");
+    req.setRawHeader("Authorization", QByteArray("Bearer ") + oauth.toUtf8());
+    req.setRawHeader("User-Agent", "GitHubCopilotChat/0.26.7");
+    req.setRawHeader("Editor-Version", "vscode/1.99.3");
+    req.setRawHeader("Editor-Plugin-Version", "copilot-chat/0.26.7");
+    req.setRawHeader("Copilot-Integration-Id", "vscode-chat");
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    QNetworkReply *reply = m_networkManager->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+
+        if (reply->error() != QNetworkReply::NoError || statusCode >= 400) {
+            const QString detail = extractJsonErrorDetail(body);
+            m_copilotStatus->setText(copilotVerifyFailureText(statusCode, detail.isEmpty() ? reply->errorString() : detail));
+            m_copilotVerifySession->setEnabled(m_secretStore && m_secretStore->hasGitHubOAuthToken());
+            return;
+        }
+
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            m_copilotStatus->setText(i18n("Copilot verification failed: token response parse error"));
+            m_copilotVerifySession->setEnabled(m_secretStore && m_secretStore->hasGitHubOAuthToken());
+            return;
+        }
+
+        const QJsonObject obj = doc.object();
+        const QString token = obj.value(QStringLiteral("token")).toString().trimmed();
+        if (token.isEmpty()) {
+            m_copilotStatus->setText(i18n("Copilot verification failed: token response missing session token"));
+            m_copilotVerifySession->setEnabled(m_secretStore && m_secretStore->hasGitHubOAuthToken());
+            return;
+        }
+
+        QString expiresText;
+        const QJsonValue expiresVal = obj.value(QStringLiteral("expires_at"));
+        if (expiresVal.isDouble()) {
+            const qint64 raw = static_cast<qint64>(expiresVal.toDouble());
+            const qint64 ms = raw > 10'000'000'000LL ? raw : raw * 1000LL;
+            expiresText = QDateTime::fromMSecsSinceEpoch(ms, QTimeZone::UTC).toString(Qt::ISODate);
+        } else if (expiresVal.isString()) {
+            expiresText = expiresVal.toString();
+        }
+
+        if (expiresText.trimmed().isEmpty()) {
+            m_copilotStatus->setText(i18n("Status: Copilot session verified"));
+        } else {
+            m_copilotStatus->setText(i18n("Status: Copilot session verified, expires %1", expiresText));
+        }
+
+        m_copilotVerifySession->setEnabled(true);
+    });
+}
+
 void KateAiConfigPage::slotCopilotOpenVerificationUri()
 {
     const QUrl url(m_copilotVerificationUri->text().trimmed());
@@ -567,6 +700,7 @@ void KateAiConfigPage::refreshCopilotStatus()
         m_copilotStatus->setText(i18n("KWallet is unavailable: %1", m_secretStore->lastErrorString()));
         m_copilotSignIn->setEnabled(false);
         m_copilotSignOut->setEnabled(false);
+        m_copilotVerifySession->setEnabled(false);
         return;
     }
 
@@ -583,6 +717,7 @@ void KateAiConfigPage::refreshCopilotStatus()
 
     m_copilotSignIn->setEnabled(!flowActive);
     m_copilotSignOut->setEnabled(hasToken);
+    m_copilotVerifySession->setEnabled(hasToken && !flowActive);
 
     const bool hasUri = !m_copilotVerificationUri->text().trimmed().isEmpty();
     const bool hasCode = !m_copilotUserCode->text().trimmed().isEmpty();

@@ -43,6 +43,52 @@ struct CopilotClientHeaders {
     return h;
 }
 
+[[nodiscard]] QString extractErrorDetail(const QByteArray &body)
+{
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        return QString::fromUtf8(body).trimmed();
+    }
+
+    const QJsonObject obj = doc.object();
+    const QJsonValue errVal = obj.value(QStringLiteral("error"));
+    if (errVal.isObject()) {
+        const QString msg = errVal.toObject().value(QStringLiteral("message")).toString().trimmed();
+        if (!msg.isEmpty()) {
+            return msg;
+        }
+    }
+    if (errVal.isString()) {
+        return errVal.toString().trimmed();
+    }
+
+    return obj.value(QStringLiteral("message")).toString().trimmed();
+}
+
+[[nodiscard]] QString classifyExchangeFailure(int statusCode, const QString &detail, const QString &fallback)
+{
+    const QString clean = detail.trimmed().isEmpty() ? fallback.trimmed() : detail.trimmed();
+
+    if (statusCode == 401) {
+        return clean.isEmpty() ? QStringLiteral("Copilot token exchange failed: GitHub OAuth sign-in expired")
+                               : QStringLiteral("Copilot token exchange failed: GitHub OAuth sign-in expired (%1)").arg(clean);
+    }
+
+    if (statusCode == 403) {
+        return clean.isEmpty() ? QStringLiteral("Copilot token exchange failed: subscription or organization access unavailable")
+                               : QStringLiteral("Copilot token exchange failed: subscription or organization access unavailable (%1)").arg(clean);
+    }
+
+    if (statusCode == 429) {
+        return clean.isEmpty() ? QStringLiteral("Copilot token exchange failed: rate limit reached")
+                               : QStringLiteral("Copilot token exchange failed: rate limit reached (%1)").arg(clean);
+    }
+
+    return clean.isEmpty() ? QStringLiteral("Copilot token exchange failed (%1)").arg(statusCode)
+                           : QStringLiteral("Copilot token exchange failed (%1): %2").arg(statusCode).arg(clean);
+}
+
 } // namespace
 
 CopilotAuthManager::CopilotAuthManager(KWalletSecretStore *secretStore, QNetworkAccessManager *networkManager, QObject *parent)
@@ -173,8 +219,7 @@ void CopilotAuthManager::onExchangeFinished()
     }
 
     if (error != QNetworkReply::NoError) {
-        const QString msg = QStringLiteral("Copilot token exchange failed (%1): %2").arg(statusCode).arg(errorString);
-        completeAllWithError(msg);
+        completeAllWithError(classifyExchangeFailure(statusCode, extractErrorDetail(body), errorString));
         return;
     }
 

@@ -9,6 +9,7 @@
 
 #include <QComboBox>
 #include <QLabel>
+#include <QPushButton>
 #include <QTest>
 
 class KateAiConfigPageTest : public QObject
@@ -28,16 +29,19 @@ void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
     auto *providerHint = page.findChild<QLabel *>(QStringLiteral("providerHintLabel"));
     auto *shortcutHint = page.findChild<QLabel *>(QStringLiteral("shortcutHintLabel"));
     auto *providerCombo = page.findChild<QComboBox *>(QStringLiteral("providerCombo"));
+    auto *verifySession = page.findChild<QPushButton *>(QStringLiteral("copilotVerifySessionButton"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
     QVERIFY(providerCombo);
+    QVERIFY(verifySession);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Esc")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Ctrl+Alt+Shift+Right")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Ctrl+Alt+Shift+L")));
+    QVERIFY(shortcutHint->text().contains(QStringLiteral("Ctrl+Alt+Shift+Space")));
 
     const int copilotIndex = providerCombo->findData(QStringLiteral("github-copilot-codex"));
     QVERIFY(copilotIndex >= 0);
