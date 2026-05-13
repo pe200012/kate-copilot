@@ -155,6 +155,7 @@ Proposal is written for KDE/KTextEditor maintainers and references public API co
 - Copilot exchange and inference failures now include categorized messages in `src/auth/CopilotAuthManager.cpp` and `src/network/CopilotCodexProvider.cpp`.
 - CI workflow added at `.github/workflows/ci.yml`.
 - CI now builds and runs tests inside `.github/ci/Dockerfile`, based on `ubuntu:26.04`, to provide recent KF6 dev packages unavailable on plain Ubuntu 24.04 runners.
+- CI container build now uses `docker/setup-buildx-action` and `docker/build-push-action` with `type=gha` cache, `mode=max`, and `load: true` so later runs reuse Docker layers while still loading the image for `docker run`.
 - Release docs added: `CHANGELOG.md`, `docs/releases/v0.1.0.md`.
 - KTextEditor proposal added: `docs/proposals/2026-04-25-ktexteditor-virtual-block-provider.md`.
 - `.gitignore` now excludes local `.serena/` memory storage.
