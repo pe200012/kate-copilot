@@ -30,7 +30,7 @@ A3. `EditorSession` emits `suggestionVisibilityChanged(bool)`. `KateAiInlineComp
 A4. Add `CHANGELOG.md`, `docs/releases/v0.1.0.md`, README badges/links, and packaging notes. Tagging and GitHub Release creation are kept as explicit maintainer commands.
 
 ### Q5. What CI should do first?
-A5. Add a GitHub Actions workflow for Ubuntu + KF6 + Qt6 that installs distro packages, configures CMake with tests, builds, and runs CTest under `xvfb-run`.
+A5. Add a GitHub Actions workflow that runs the build inside an Ubuntu 26.04 Docker image with Qt6/KF6 development packages, configures CMake with tests, builds, and runs CTest with the Qt offscreen platform.
 
 ### Q6. How should Copilot verification work?
 A6. Settings page gains **Verify session**. It reads the GitHub OAuth token from KWallet and calls `https://api.github.com/copilot_internal/v2/token`. A successful session-token response updates status with expiry. Failures map to authentication, entitlement, rate-limit, and generic provider categories.
@@ -81,14 +81,15 @@ Files:
 Release notes include features, install options, Gentoo live ebuild path, known limitations, and verification command.
 
 ### 3. CI
-File:
+Files:
 - `.github/workflows/ci.yml`
+- `.github/ci/Dockerfile`
 
-The workflow uses Ubuntu packages for Qt6/KF6 and runs:
+The workflow builds an Ubuntu 26.04 CI image with Qt6/KF6 packages, then runs:
 ```bash
-cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build -j2
-xvfb-run --auto-servernum ctest --test-dir build --output-on-failure
+cmake -S . -B /tmp/kate-copilot-build -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build /tmp/kate-copilot-build -j"$(nproc)"
+ctest --test-dir /tmp/kate-copilot-build --output-on-failure --timeout 120
 ```
 
 ### 4. UX cleanup
@@ -153,7 +154,12 @@ Proposal is written for KDE/KTextEditor maintainers and references public API co
 - Copilot Verify session UI implemented in `src/settings/KateAiConfigPage.{h,cpp}`.
 - Copilot exchange and inference failures now include categorized messages in `src/auth/CopilotAuthManager.cpp` and `src/network/CopilotCodexProvider.cpp`.
 - CI workflow added at `.github/workflows/ci.yml`.
+- CI now builds and runs tests inside `.github/ci/Dockerfile`, based on `ubuntu:26.04`, to provide recent KF6 dev packages unavailable on plain Ubuntu 24.04 runners.
 - Release docs added: `CHANGELOG.md`, `docs/releases/v0.1.0.md`.
 - KTextEditor proposal added: `docs/proposals/2026-04-25-ktexteditor-virtual-block-provider.md`.
 - `.gitignore` now excludes local `.serena/` memory storage.
-- Verification: `cmake --build build -j 8 && ctest --test-dir build --output-on-failure` => 12/12 passed.
+- Static helper libraries now build with `POSITION_INDEPENDENT_CODE` so Ubuntu's linker can link them into the plugin module.
+- `EditorSession` avoids unregistering inline notes from a view while the view is already being destroyed.
+- Inline-note rendering experiment assertions now verify rendering without requiring version-specific multiline spill behavior.
+- Verification: `docker build -f .github/ci/Dockerfile -t kate-copilot-ci:ubuntu-26.04 . && docker run ... ctest --test-dir /tmp/kate-copilot-build --output-on-failure --timeout 120` => 12/12 passed.
+- Local verification: `cmake --build build -j 8 && ctest --test-dir build --output-on-failure` => 12/12 passed.
