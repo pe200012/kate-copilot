@@ -1,5 +1,8 @@
 # Kate AI Inline Completion
 
+[![CI](https://github.com/pe200012/kate-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/pe200012/kate-copilot/actions/workflows/ci.yml)
+[![License: LGPL-2.0-or-later](https://img.shields.io/badge/license-LGPL--2.0--or--later-blue.svg)](LICENSE)
+
 Native AI inline completion for KDE Kate / KTextEditor.
 
 This plugin provides:
@@ -20,6 +23,10 @@ This plugin provides:
 ### EOF multiline ghost text
 
 ![EOF ghost text](docs/assets/ghost-overlay-eof.png)
+
+## Release notes
+- [v0.1.0](docs/releases/v0.1.0.md)
+- [Changelog](CHANGELOG.md)
 
 ## Build
 
@@ -104,7 +111,10 @@ Copilot uses the fixed Codex completions endpoint and stores the GitHub OAuth to
 - `Tab`: accept the full suggestion
 - `Ctrl+Alt+Shift+Right`: accept the next word
 - `Ctrl+Alt+Shift+L`: accept the next line
+- `Ctrl+Alt+Shift+Space`: trigger a suggestion
 - `Esc`: clear the suggestion
+
+These commands are exposed as Kate actions and can be rebound in Kate's shortcut settings.
 
 ### Runtime behavior
 - The first ghost line starts at the exact cursor x position.
