@@ -19,6 +19,7 @@
 #include <QHash>
 
 class KateAiInlineCompletionPlugin;
+class QAction;
 class QNetworkAccessManager;
 
 namespace KateAiInlineCompletion
@@ -39,12 +40,16 @@ class KateAiInlineCompletionPluginView final : public QObject, public KXMLGUICli
 
 public:
     KateAiInlineCompletionPluginView(KateAiInlineCompletionPlugin *plugin, KTextEditor::MainWindow *mainWindow);
+    ~KateAiInlineCompletionPluginView() override;
 
 private Q_SLOTS:
     void onViewChanged(KTextEditor::View *view);
 
 private:
+    void setupActions();
     void ensureSession(KTextEditor::View *view);
+    [[nodiscard]] KateAiInlineCompletion::EditorSession *activeSession() const;
+    void updateActionState();
 
     KateAiInlineCompletionPlugin *m_plugin = nullptr;
     KTextEditor::MainWindow *m_mainWindow = nullptr;
@@ -52,6 +57,12 @@ private:
     QNetworkAccessManager *m_networkManager = nullptr;
     KateAiInlineCompletion::KWalletSecretStore *m_secretStore = nullptr;
     KateAiInlineCompletion::CopilotAuthManager *m_copilotAuthManager = nullptr;
+
+    QAction *m_acceptFullAction = nullptr;
+    QAction *m_acceptNextWordAction = nullptr;
+    QAction *m_acceptNextLineAction = nullptr;
+    QAction *m_dismissAction = nullptr;
+    QAction *m_triggerAction = nullptr;
 
     QHash<KTextEditor::View *, KateAiInlineCompletion::EditorSession *> m_sessions;
 };

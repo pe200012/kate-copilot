@@ -26,6 +26,7 @@ RDEPEND="
 	kde-frameworks/ki18n:6
 	kde-frameworks/ktexteditor:6
 	kde-frameworks/kwallet:6
+	kde-frameworks/kxmlgui:6
 "
 DEPEND="${RDEPEND}"
 

@@ -143,5 +143,6 @@ target_link_libraries(kateaiinlinecompletion
         KF6::CoreAddons
         KF6::I18n
         KF6::TextEditor
+        KF6::XmlGui
         KF6::ConfigCore
 )

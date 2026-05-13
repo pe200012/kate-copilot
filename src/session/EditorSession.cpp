@@ -14,6 +14,7 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "prompt/CopilotCodexPromptBuilder.h"
 #include "prompt/PromptTemplate.h"
+#include "render/GhostTextInlineNoteProvider.h"
 #include "render/GhostTextOverlayWidget.h"
 #include "settings/CompletionSettings.h"
 #include "settings/KWalletSecretStore.h"
@@ -55,6 +56,9 @@ EditorSession::EditorSession(KTextEditor::View *view,
     connect(&m_debounceTimer, &QTimer::timeout, this, &EditorSession::onDebounceTimeout);
 
     if (m_view) {
+        m_inlineNoteProvider = std::make_unique<GhostTextInlineNoteProvider>();
+        m_view->registerInlineNoteProvider(m_inlineNoteProvider.get());
+
         if (QWidget *w = m_view->editorWidget()) {
             m_overlay = new GhostTextOverlayWidget(m_view, w);
         }
@@ -103,6 +107,9 @@ EditorSession::~EditorSession()
             w->removeEventFilter(this);
         }
 
+        if (m_inlineNoteProvider) {
+            m_view->unregisterInlineNoteProvider(m_inlineNoteProvider.get());
+        }
     }
 }
 
@@ -122,8 +129,7 @@ bool EditorSession::eventFilter(QObject *watched, QEvent *event)
 
     const auto *keyEvent = static_cast<QKeyEvent *>(event);
 
-    const bool suggestionVisible = m_state.anchorTracked && !m_state.suppressed && !m_state.visibleText.isEmpty()
-        && m_state.anchor.generation == m_generation;
+    const bool suggestionVisible = hasVisibleSuggestion();
     if (!suggestionVisible) {
         return QObject::eventFilter(watched, event);
     }
@@ -473,6 +479,27 @@ void EditorSession::clearSuggestion()
     applyStateToOverlay();
 }
 
+bool EditorSession::hasVisibleSuggestion() const
+{
+    return m_state.anchorTracked && !m_state.suppressed && !m_state.visibleText.isEmpty() && m_state.anchor.generation == m_generation;
+}
+
+void EditorSession::acceptFullSuggestion()
+{
+    acceptSuggestion();
+}
+
+void EditorSession::dismissSuggestion()
+{
+    bumpGeneration();
+}
+
+void EditorSession::triggerSuggestion()
+{
+    bumpGeneration();
+    startRequest();
+}
+
 void EditorSession::acceptSuggestion()
 {
     if (!m_view) {
@@ -656,14 +683,45 @@ bool EditorSession::syncAnchorFromTracker()
     return true;
 }
 
+bool EditorSession::shouldRenderInlineNote(const GhostTextState &state) const
+{
+    return state.anchorTracked && !state.suppressed && !state.visibleText.isEmpty() && !state.visibleText.contains(QLatin1Char('\n'));
+}
+
+bool EditorSession::shouldRenderOverlay(const GhostTextState &state) const
+{
+    return state.anchorTracked && !state.suppressed && state.visibleText.contains(QLatin1Char('\n'));
+}
+
+GhostTextState EditorSession::clearedRenderState() const
+{
+    GhostTextState cleared;
+    cleared.anchor.generation = m_generation;
+    return cleared;
+}
+
 void EditorSession::applyStateToOverlay()
 {
     if (m_state.anchorTracked) {
         (void)syncAnchorFromTracker();
     }
 
+    const GhostTextState cleared = clearedRenderState();
+    const bool inlineNote = shouldRenderInlineNote(m_state);
+    const bool overlay = shouldRenderOverlay(m_state);
+
+    if (m_inlineNoteProvider) {
+        m_inlineNoteProvider->setState(inlineNote ? m_state : cleared);
+    }
+
     if (m_overlay) {
-        m_overlay->setState(m_state);
+        m_overlay->setState(overlay ? m_state : cleared);
+    }
+
+    const bool visible = hasVisibleSuggestion();
+    if (visible != m_lastSuggestionVisible) {
+        m_lastSuggestionVisible = visible;
+        Q_EMIT suggestionVisibilityChanged(visible);
     }
 }
 

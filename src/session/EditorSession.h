@@ -40,6 +40,7 @@ namespace KateAiInlineCompletion
 
 class AbstractAIProvider;
 class CopilotAuthManager;
+class GhostTextInlineNoteProvider;
 class GhostTextOverlayWidget;
 class KWalletSecretStore;
 
@@ -59,9 +60,16 @@ public:
 
     bool eventFilter(QObject *watched, QEvent *event) override;
 
-    // Partial acceptance commands.
+    [[nodiscard]] bool hasVisibleSuggestion() const;
+
+    void acceptFullSuggestion();
     void acceptNextWord();
     void acceptNextLine();
+    void dismissSuggestion();
+    void triggerSuggestion();
+
+Q_SIGNALS:
+    void suggestionVisibilityChanged(bool visible);
 
 private Q_SLOTS:
     void onTextInserted(KTextEditor::View *view, KTextEditor::Cursor position, const QString &text);
@@ -89,6 +97,9 @@ private:
     void setSuppressed(bool suppressed);
 
     [[nodiscard]] bool syncAnchorFromTracker();
+    [[nodiscard]] bool shouldRenderInlineNote(const GhostTextState &state) const;
+    [[nodiscard]] bool shouldRenderOverlay(const GhostTextState &state) const;
+    [[nodiscard]] GhostTextState clearedRenderState() const;
     void applyStateToOverlay();
 
     [[nodiscard]] QString takeNextWordChunk(const QString &remaining) const;
@@ -111,6 +122,7 @@ private:
     CopilotAuthManager *m_copilotAuthManager = nullptr;
 
     QPointer<GhostTextOverlayWidget> m_overlay;
+    std::unique_ptr<GhostTextInlineNoteProvider> m_inlineNoteProvider;
 
     std::unique_ptr<AbstractAIProvider> m_provider;
     QString m_providerId;
@@ -126,6 +138,7 @@ private:
     quint64 m_activeRequestId = 0;
 
     int m_ignoreNextViewSignals = 0;
+    bool m_lastSuggestionVisible = false;
 };
 
 } // namespace KateAiInlineCompletion

@@ -179,14 +179,13 @@ struct SessionHarness {
     }
 };
 
-void waitForSuggestion(FakeSseServer &server, KTextEditor::View *view, GhostTextOverlayWidget *overlay)
+void waitForSuggestion(FakeSseServer &server, KTextEditor::View *view, EditorSession *session)
 {
     view->setCursorPosition(KTextEditor::Cursor(0, 6));
     view->editorWidget()->setFocus();
 
     QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > 0, 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(overlay->isActive(), 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(!overlay->state().visibleText.isEmpty(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(session->hasVisibleSuggestion(), 2000);
 }
 
 } // namespace
@@ -197,6 +196,8 @@ class EditorSessionIntegrationTest : public QObject
 
 private Q_SLOTS:
     void initTestCase();
+    void singleLineSuggestionUsesInlineNoteInsteadOfOverlay();
+    void multilineSuggestionUsesOverlay();
     void tracksAnchorThroughDocumentEdits();
     void ctrlRightAcceptsNextWord();
     void ctrlAltRightAcceptsNextLine();
@@ -210,15 +211,42 @@ void EditorSessionIntegrationTest::initTestCase()
     QStandardPaths::setTestModeEnabled(true);
 }
 
-void EditorSessionIntegrationTest::tracksAnchorThroughDocumentEdits()
+void EditorSessionIntegrationTest::singleLineSuggestionUsesInlineNoteInsteadOfOverlay()
 {
     FakeSseServer server;
     QVERIFY(server.listen());
     server.setCompletion(QStringLiteral("ghost()"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
+    QVERIFY(harness.session->hasVisibleSuggestion());
+    QVERIFY2(!harness.overlay->isActive(), "single-line suggestions should be rendered by InlineNoteProvider");
+}
+
+void EditorSessionIntegrationTest::multilineSuggestionUsesOverlay()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("first\nsecond"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("first\nsecond"), 2000);
+}
+
+void EditorSessionIntegrationTest::tracksAnchorThroughDocumentEdits()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost()\nmore"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
     QCOMPARE(harness.overlay->state().anchor.column, 6);
 
     QVERIFY(harness.doc->insertText(KTextEditor::Cursor(0, 0), QStringLiteral("ZZ")));
@@ -232,7 +260,7 @@ void EditorSessionIntegrationTest::ctrlRightAcceptsNextWord()
     server.setCompletion(QStringLiteral("first second third"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
     harness.view->editorWidget()->setFocus();
     QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
@@ -240,9 +268,11 @@ void EditorSessionIntegrationTest::ctrlRightAcceptsNextWord()
     QTest::keyClick(harness.view->editorWidget(), Qt::Key_Right, Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
 
     QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixfirst SUFFIX")), 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second third"), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 6 + int(QStringLiteral("first ").size()), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.overlay->isActive(), 2000);
+
+    harness.session->acceptFullSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixfirst second thirdSUFFIX")), 2000);
 }
 
 void EditorSessionIntegrationTest::ctrlAltRightAcceptsNextLine()
@@ -252,7 +282,7 @@ void EditorSessionIntegrationTest::ctrlAltRightAcceptsNextLine()
     server.setCompletion(QStringLiteral("hello\nworld"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
     harness.view->editorWidget()->setFocus();
     QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
@@ -260,13 +290,11 @@ void EditorSessionIntegrationTest::ctrlAltRightAcceptsNextLine()
     harness.session->acceptNextLine();
 
     QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixhello\nSUFFIX")), 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->state().visibleText.startsWith(QStringLiteral("world")), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.line, 1, 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 0, 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("world"), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.line, 1, 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().anchor.column, 0, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.overlay->isActive(), 2000);
+
+    harness.session->acceptFullSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixhello\nworldSUFFIX")), 2000);
 }
 
 void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()
@@ -276,7 +304,7 @@ void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()
     server.setCompletion(QStringLiteral("ghost()"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
     harness.view->editorWidget()->setFocus();
     QTRY_VERIFY(harness.view->editorWidget()->hasFocus());
@@ -294,7 +322,7 @@ void EditorSessionIntegrationTest::escapeClearsStreamedSuggestion()
     server.setCompletion(QStringLiteral("ghost()"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
     QTest::keyClick(harness.view->editorWidget(), Qt::Key_Escape);
     QTRY_VERIFY_WITH_TIMEOUT(!harness.overlay->isActive(), 2000);
@@ -308,7 +336,7 @@ void EditorSessionIntegrationTest::focusOutClearsStreamedSuggestion()
     server.setCompletion(QStringLiteral("ghost()"));
 
     SessionHarness harness(server.endpoint());
-    waitForSuggestion(server, harness.view, harness.overlay);
+    waitForSuggestion(server, harness.view, harness.session);
 
     harness.otherFocusWidget->setFocus();
     QTRY_VERIFY_WITH_TIMEOUT(harness.otherFocusWidget->hasFocus(), 2000);

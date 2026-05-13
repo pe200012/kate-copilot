@@ -96,6 +96,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
     ${CMAKE_SOURCE_DIR}/src/network/OpenAICompatibleProvider.cpp
@@ -117,6 +118,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
         KF6::I18n
         KF6::ConfigCore
         KF6::CoreAddons
+        KF6::XmlGui
 )
 target_include_directories(kateaiinlinecompletion_editor_session_integration_test
     PRIVATE
@@ -128,6 +130,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
     ${CMAKE_SOURCE_DIR}/src/network/OpenAICompatibleProvider.cpp
@@ -149,6 +152,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
         KF6::I18n
         KF6::ConfigCore
         KF6::CoreAddons
+        KF6::XmlGui
 )
 target_include_directories(kateaiinlinecompletion_config_page_test
     PRIVATE

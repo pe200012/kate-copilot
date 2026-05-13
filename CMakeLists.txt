@@ -24,6 +24,7 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     I18n
     TextEditor
     Wallet
+    XmlGui
 )
 
 find_package(KF6Config ${KF_MIN_VERSION} REQUIRED)
