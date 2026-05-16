@@ -84,6 +84,15 @@ CompletionSettings CompletionSettings::validated() const
     out.maxSuffixChars = qBound(kSuffixMinChars, out.maxSuffixChars, kSuffixMaxChars);
     out.maxContextItems = qBound(kContextItemsMin, out.maxContextItems, kContextItemsMax);
     out.maxContextChars = qBound(kContextCharsMin, out.maxContextChars, kContextCharsMax);
+    out.recentEditsMaxFiles = qBound(kRecentEditsMaxFilesMin, out.recentEditsMaxFiles, kRecentEditsMaxFilesMax);
+    out.recentEditsMaxEdits = qBound(kRecentEditsMaxEditsMin, out.recentEditsMaxEdits, kRecentEditsMaxEditsMax);
+    out.recentEditsDiffContextLines = qBound(kRecentEditsDiffContextLinesMin, out.recentEditsDiffContextLines, kRecentEditsDiffContextLinesMax);
+    out.recentEditsMaxCharsPerEdit = qBound(kRecentEditsMaxCharsPerEditMin, out.recentEditsMaxCharsPerEdit, kRecentEditsMaxCharsPerEditMax);
+    out.recentEditsDebounceMs = qBound(kRecentEditsDebounceMinMs, out.recentEditsDebounceMs, kRecentEditsDebounceMaxMs);
+    out.recentEditsMaxLinesPerEdit = qBound(kRecentEditsMaxLinesPerEditMin, out.recentEditsMaxLinesPerEdit, kRecentEditsMaxLinesPerEditMax);
+    out.recentEditsActiveDocDistanceLimitFromCursor = qBound(kRecentEditsActiveDocDistanceLimitMin,
+                                                             out.recentEditsActiveDocDistanceLimitFromCursor,
+                                                             kRecentEditsActiveDocDistanceLimitMax);
 
     out.provider = out.provider.trimmed().toLower();
     if (!isSupportedProvider(out.provider)) {
@@ -133,6 +142,15 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.enableContextualPrompt = group.readEntry("EnableContextualPrompt", d.enableContextualPrompt);
     out.maxContextItems = group.readEntry("MaxContextItems", d.maxContextItems);
     out.maxContextChars = group.readEntry("MaxContextChars", d.maxContextChars);
+    out.enableRecentEditsContext = group.readEntry("EnableRecentEditsContext", d.enableRecentEditsContext);
+    out.recentEditsMaxFiles = group.readEntry("RecentEditsMaxFiles", d.recentEditsMaxFiles);
+    out.recentEditsMaxEdits = group.readEntry("RecentEditsMaxEdits", d.recentEditsMaxEdits);
+    out.recentEditsDiffContextLines = group.readEntry("RecentEditsDiffContextLines", d.recentEditsDiffContextLines);
+    out.recentEditsMaxCharsPerEdit = group.readEntry("RecentEditsMaxCharsPerEdit", d.recentEditsMaxCharsPerEdit);
+    out.recentEditsDebounceMs = group.readEntry("RecentEditsDebounceMs", d.recentEditsDebounceMs);
+    out.recentEditsMaxLinesPerEdit = group.readEntry("RecentEditsMaxLinesPerEdit", d.recentEditsMaxLinesPerEdit);
+    out.recentEditsActiveDocDistanceLimitFromCursor = group.readEntry("RecentEditsActiveDocDistanceLimitFromCursor",
+                                                                     d.recentEditsActiveDocDistanceLimitFromCursor);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -158,6 +176,14 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("EnableContextualPrompt", v.enableContextualPrompt);
     group.writeEntry("MaxContextItems", v.maxContextItems);
     group.writeEntry("MaxContextChars", v.maxContextChars);
+    group.writeEntry("EnableRecentEditsContext", v.enableRecentEditsContext);
+    group.writeEntry("RecentEditsMaxFiles", v.recentEditsMaxFiles);
+    group.writeEntry("RecentEditsMaxEdits", v.recentEditsMaxEdits);
+    group.writeEntry("RecentEditsDiffContextLines", v.recentEditsDiffContextLines);
+    group.writeEntry("RecentEditsMaxCharsPerEdit", v.recentEditsMaxCharsPerEdit);
+    group.writeEntry("RecentEditsDebounceMs", v.recentEditsDebounceMs);
+    group.writeEntry("RecentEditsMaxLinesPerEdit", v.recentEditsMaxLinesPerEdit);
+    group.writeEntry("RecentEditsActiveDocDistanceLimitFromCursor", v.recentEditsActiveDocDistanceLimitFromCursor);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

@@ -620,7 +620,7 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
 
 KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
 {
-    KateAiInlineCompletion::CompletionSettings s = KateAiInlineCompletion::CompletionSettings::defaults();
+    KateAiInlineCompletion::CompletionSettings s = m_plugin ? m_plugin->settings().validated() : KateAiInlineCompletion::CompletionSettings::defaults();
 
     s.enabled = m_enabled->isChecked();
     s.debounceMs = m_debounceMs->value();

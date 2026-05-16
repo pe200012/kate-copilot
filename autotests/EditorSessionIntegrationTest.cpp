@@ -5,6 +5,7 @@
     Module: EditorSessionIntegrationTest
 */
 
+#include "context/RecentEditsTracker.h"
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "render/GhostTextOverlayWidget.h"
 #include "session/EditorSession.h"
@@ -33,6 +34,7 @@
 using KateAiInlineCompletion::CompletionSettings;
 using KateAiInlineCompletion::EditorSession;
 using KateAiInlineCompletion::GhostTextOverlayWidget;
+using KateAiInlineCompletion::RecentEditsTracker;
 
 namespace
 {
@@ -136,6 +138,7 @@ struct SessionHarness {
     KTextEditor::View *view = nullptr;
     KateAiInlineCompletionPlugin plugin;
     QNetworkAccessManager manager;
+    RecentEditsTracker recentEditsTracker;
     EditorSession *session = nullptr;
     GhostTextOverlayWidget *overlay = nullptr;
 
@@ -169,7 +172,8 @@ struct SessionHarness {
         settings.suppressWhenCompletionPopupVisible = false;
         plugin.setSettings(settings);
 
-        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, view);
+        recentEditsTracker.trackDocument(doc.data(), QStringLiteral("/tmp/editor-session.cpp"));
+        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, view);
         overlay = view->editorWidget()->findChild<GhostTextOverlayWidget *>();
         Q_ASSERT(overlay);
 

@@ -62,6 +62,8 @@ target_sources(kateaiinlinecompletion_context
         context/CurrentFileContextProvider.cpp
         context/ProjectTraitsContextProvider.cpp
         context/OpenTabsContextProvider.cpp
+        context/RecentEditsTracker.cpp
+        context/RecentEditsContextProvider.cpp
 )
 
 target_include_directories(kateaiinlinecompletion_context
@@ -163,6 +165,9 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         context/CurrentFileContextProvider.h
         context/ProjectTraitsContextProvider.h
         context/OpenTabsContextProvider.h
+        context/RecentEdit.h
+        context/RecentEditsTracker.h
+        context/RecentEditsContextProvider.h
 
         prompt/PromptAssembler.h
 

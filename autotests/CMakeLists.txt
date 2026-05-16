@@ -52,6 +52,22 @@ target_include_directories(kateaiinlinecompletion_suggestion_post_processor_test
         ${CMAKE_SOURCE_DIR}/src
 )
 
+ecm_add_test(RecentEditsTrackerTest.cpp
+    TEST_NAME kateaiinlinecompletion_recent_edits_tracker_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+
+ecm_add_test(RecentEditsContextProviderTest.cpp
+    TEST_NAME kateaiinlinecompletion_recent_edits_context_provider_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+
 ecm_add_test(GhostTextInlineNoteProviderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     TEST_NAME kateaiinlinecompletion_ghost_text_inline_note_provider_test
@@ -129,6 +145,8 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
@@ -169,6 +187,8 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp

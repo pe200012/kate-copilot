@@ -92,9 +92,14 @@ namespace
     return item.kind == ContextItem::Kind::Trait && !item.name.trimmed().isEmpty() && !item.value.trimmed().isEmpty();
 }
 
+[[nodiscard]] bool hasRecentEditContent(const ContextItem &item)
+{
+    return item.kind == ContextItem::Kind::CodeSnippet && item.providerId == QStringLiteral("recent-edits") && !item.value.trimmed().isEmpty();
+}
+
 [[nodiscard]] bool hasSnippetContent(const ContextItem &item)
 {
-    return item.kind == ContextItem::Kind::CodeSnippet && !item.value.trimmed().isEmpty();
+    return item.kind == ContextItem::Kind::CodeSnippet && !hasRecentEditContent(item) && !item.value.trimmed().isEmpty();
 }
 
 [[nodiscard]] bool tryAppend(QString *out, const QString &block, int budget)
@@ -124,6 +129,24 @@ namespace
     }
     return value;
 }
+
+[[nodiscard]] QString renderRecentEditValue(const QString &comment, const ContextItem &item)
+{
+    QString block;
+    const QStringList lines = normalizedSnippet(item.value).split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        if (line.isEmpty()) {
+            continue;
+        }
+
+        if (line.startsWith(QStringLiteral("File:"))) {
+            block += comment + QLatin1Char(' ') + line + QLatin1Char('\n');
+        } else {
+            block += line + QLatin1Char('\n');
+        }
+    }
+    return block;
+}
 } // namespace
 
 BuiltPrompt PromptAssembler::build(const QString &templateId,
@@ -151,7 +174,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
     candidates.reserve(items.size());
     for (ContextItem item : items) {
         item.importance = qBound(0, item.importance, 100);
-        if (hasTraitContent(item) || hasSnippetContent(item)) {
+        if (hasTraitContent(item) || hasRecentEditContent(item) || hasSnippetContent(item)) {
             candidates.push_back(item);
         }
     }
@@ -185,6 +208,33 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
 
     if (traitHeaderWritten) {
         (void)tryAppend(&out, QStringLiteral("\n"), options.maxContextChars);
+    }
+
+    QString recentEditsBlock;
+    bool recentEditWritten = false;
+    for (const ContextItem &item : std::as_const(candidates)) {
+        if (!hasRecentEditContent(item)) {
+            continue;
+        }
+
+        QString itemBlock;
+        if (!recentEditWritten) {
+            itemBlock += comment + QStringLiteral(" Recently edited files. Continue the user's current edit pattern.\n");
+        }
+        itemBlock += renderRecentEditValue(comment, item);
+
+        const QString endLine = comment + QStringLiteral(" End of recent edits\n\n");
+        if (options.maxContextChars >= 0 && out.size() + recentEditsBlock.size() + itemBlock.size() + endLine.size() > options.maxContextChars) {
+            continue;
+        }
+
+        recentEditsBlock += itemBlock;
+        recentEditWritten = true;
+    }
+
+    if (recentEditWritten) {
+        recentEditsBlock += comment + QStringLiteral(" End of recent edits\n\n");
+        out += recentEditsBlock;
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {

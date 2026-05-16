@@ -43,6 +43,7 @@ class CopilotAuthManager;
 class GhostTextInlineNoteProvider;
 class GhostTextOverlayWidget;
 class KWalletSecretStore;
+class RecentEditsTracker;
 
 class EditorSession final : public QObject
 {
@@ -54,6 +55,7 @@ public:
                   KWalletSecretStore *secretStore,
                   QNetworkAccessManager *networkManager,
                   CopilotAuthManager *copilotAuthManager,
+                  RecentEditsTracker *recentEditsTracker,
                   QObject *parent = nullptr);
 
     ~EditorSession() override;
@@ -120,6 +122,7 @@ private:
 
     QNetworkAccessManager *m_networkManager = nullptr;
     CopilotAuthManager *m_copilotAuthManager = nullptr;
+    RecentEditsTracker *m_recentEditsTracker = nullptr;
 
     QPointer<GhostTextOverlayWidget> m_overlay;
     std::unique_ptr<GhostTextInlineNoteProvider> m_inlineNoteProvider;

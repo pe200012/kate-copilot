@@ -35,6 +35,20 @@ struct CompletionSettings {
     static constexpr int kContextItemsMax = 20;
     static constexpr int kContextCharsMin = 0;
     static constexpr int kContextCharsMax = 30000;
+    static constexpr int kRecentEditsMaxFilesMin = 1;
+    static constexpr int kRecentEditsMaxFilesMax = 100;
+    static constexpr int kRecentEditsMaxEditsMin = 0;
+    static constexpr int kRecentEditsMaxEditsMax = 50;
+    static constexpr int kRecentEditsDiffContextLinesMin = 0;
+    static constexpr int kRecentEditsDiffContextLinesMax = 20;
+    static constexpr int kRecentEditsMaxCharsPerEditMin = 200;
+    static constexpr int kRecentEditsMaxCharsPerEditMax = 20000;
+    static constexpr int kRecentEditsDebounceMinMs = 50;
+    static constexpr int kRecentEditsDebounceMaxMs = 5000;
+    static constexpr int kRecentEditsMaxLinesPerEditMin = 1;
+    static constexpr int kRecentEditsMaxLinesPerEditMax = 100;
+    static constexpr int kRecentEditsActiveDocDistanceLimitMin = 0;
+    static constexpr int kRecentEditsActiveDocDistanceLimitMax = 10000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -59,6 +73,15 @@ struct CompletionSettings {
     bool enableContextualPrompt = true;
     int maxContextItems = 6;
     int maxContextChars = 6000;
+
+    bool enableRecentEditsContext = true;
+    int recentEditsMaxFiles = 20;
+    int recentEditsMaxEdits = 8;
+    int recentEditsDiffContextLines = 3;
+    int recentEditsMaxCharsPerEdit = 2000;
+    int recentEditsDebounceMs = 500;
+    int recentEditsMaxLinesPerEdit = 10;
+    int recentEditsActiveDocDistanceLimitFromCursor = 100;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

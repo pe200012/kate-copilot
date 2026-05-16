@@ -67,6 +67,7 @@ class PromptAssemblerTest : public QObject
 private Q_SLOTS:
     void traitsRenderBeforeFimMarkers();
     void codeSnippetsIncludePathHeaders();
+    void recentEditsRenderAsEditPatternBlock();
     void budgetDropsLowerImportanceItemsFirst();
     void disabledContextKeepsFimPromptValid();
 };
@@ -100,6 +101,27 @@ void PromptAssemblerTest::codeSnippetsIncludePathHeaders()
 
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Compare this snippet from src/foo.h:")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("class Foo {};")));
+}
+
+void PromptAssemblerTest::recentEditsRenderAsEditPatternBlock()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 2000;
+
+    ContextItem item = snippet(QStringLiteral("src/foo.cpp"), QStringLiteral("File: src/foo.cpp\n@@ lines 40-47\n- oldName();\n+ newName();"), 95);
+    item.providerId = QStringLiteral("recent-edits");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{item},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Recently edited files. Continue the user's current edit pattern.")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// File: src/foo.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("@@ lines 40-47")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("+ newName();")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// End of recent edits")));
+    QVERIFY(prompt.userPrompt.indexOf(QStringLiteral("Recently edited files")) < prompt.userPrompt.indexOf(QStringLiteral("<|fim_prefix|>")));
 }
 
 void PromptAssemblerTest::budgetDropsLowerImportanceItemsFirst()

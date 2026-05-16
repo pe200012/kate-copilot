@@ -7,9 +7,13 @@
 
 #include "settings/KateAiConfigPage.h"
 
+#include "plugin/KateAiInlineCompletionPlugin.h"
+#include "settings/CompletionSettings.h"
+
 #include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QTest>
 
 class KateAiConfigPageTest : public QObject
@@ -17,8 +21,15 @@ class KateAiConfigPageTest : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase();
     void showsProviderRecommendationAndShortcutHint();
+    void hiddenRecentEditsSettingsSurviveApply();
 };
+
+void KateAiConfigPageTest::initTestCase()
+{
+    QStandardPaths::setTestModeEnabled(true);
+}
 
 void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
 {
@@ -48,6 +59,35 @@ void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
     providerCombo->setCurrentIndex(copilotIndex);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("GitHub Copilot")));
+}
+
+void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+
+    KateAiInlineCompletion::CompletionSettings settings = KateAiInlineCompletion::CompletionSettings::defaults();
+    settings.enableRecentEditsContext = false;
+    settings.recentEditsMaxFiles = 7;
+    settings.recentEditsMaxEdits = 5;
+    settings.recentEditsDiffContextLines = 2;
+    settings.recentEditsMaxCharsPerEdit = 1500;
+    settings.recentEditsDebounceMs = 250;
+    settings.recentEditsMaxLinesPerEdit = 6;
+    settings.recentEditsActiveDocDistanceLimitFromCursor = 60;
+    plugin.setSettings(settings);
+
+    KateAiConfigPage page(nullptr, &plugin);
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableRecentEditsContext, settings.enableRecentEditsContext);
+    QCOMPARE(out.recentEditsMaxFiles, settings.recentEditsMaxFiles);
+    QCOMPARE(out.recentEditsMaxEdits, settings.recentEditsMaxEdits);
+    QCOMPARE(out.recentEditsDiffContextLines, settings.recentEditsDiffContextLines);
+    QCOMPARE(out.recentEditsMaxCharsPerEdit, settings.recentEditsMaxCharsPerEdit);
+    QCOMPARE(out.recentEditsDebounceMs, settings.recentEditsDebounceMs);
+    QCOMPARE(out.recentEditsMaxLinesPerEdit, settings.recentEditsMaxLinesPerEdit);
+    QCOMPARE(out.recentEditsActiveDocDistanceLimitFromCursor, settings.recentEditsActiveDocDistanceLimitFromCursor);
 }
 
 QTEST_MAIN(KateAiConfigPageTest)

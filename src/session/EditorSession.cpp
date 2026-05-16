@@ -12,6 +12,8 @@
 #include "context/CurrentFileContextProvider.h"
 #include "context/OpenTabsContextProvider.h"
 #include "context/ProjectTraitsContextProvider.h"
+#include "context/RecentEditsContextProvider.h"
+#include "context/RecentEditsTracker.h"
 #include "network/AbstractAIProvider.h"
 #include "network/CopilotCodexProvider.h"
 #include "network/OpenAICompatibleProvider.h"
@@ -70,8 +72,19 @@ static PromptAssemblyOptions promptAssemblyOptionsFromSettings(const CompletionS
     return options;
 }
 
+static RecentEditsContextOptions recentEditsContextOptionsFromSettings(const CompletionSettings &settings)
+{
+    RecentEditsContextOptions options;
+    options.enabled = settings.enableRecentEditsContext;
+    options.maxEdits = settings.recentEditsMaxEdits;
+    options.maxCharsPerEdit = settings.recentEditsMaxCharsPerEdit;
+    options.activeDocDistanceLimitFromCursor = settings.recentEditsActiveDocDistanceLimitFromCursor;
+    return options;
+}
+
 static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *view,
                                                           KTextEditor::Document *doc,
+                                                          RecentEditsTracker *recentEditsTracker,
                                                           const CompletionSettings &settings,
                                                           const PromptContext &promptCtx,
                                                           const KTextEditor::Cursor &cursor,
@@ -96,6 +109,9 @@ static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *vie
     ContextProviderRegistry registry;
     registry.addProvider(std::make_unique<CurrentFileContextProvider>());
     registry.addProvider(std::make_unique<ProjectTraitsContextProvider>());
+    if (settings.enableRecentEditsContext && recentEditsTracker) {
+        registry.addProvider(std::make_unique<RecentEditsContextProvider>(recentEditsTracker, recentEditsContextOptionsFromSettings(settings)));
+    }
     registry.addProvider(std::make_unique<OpenTabsContextProvider>(view->mainWindow(), view));
 
     return registry.resolve(contextRequest, settings.maxContextItems);
@@ -135,6 +151,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
                              KWalletSecretStore *secretStore,
                              QNetworkAccessManager *networkManager,
                              CopilotAuthManager *copilotAuthManager,
+                             RecentEditsTracker *recentEditsTracker,
                              QObject *parent)
     : QObject(parent)
     , m_view(view)
@@ -142,6 +159,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
     , m_secretStore(secretStore)
     , m_networkManager(networkManager)
     , m_copilotAuthManager(copilotAuthManager)
+    , m_recentEditsTracker(recentEditsTracker)
 {
     m_debounceTimer.setSingleShot(true);
     connect(&m_debounceTimer, &QTimer::timeout, this, &EditorSession::onDebounceTimeout);
@@ -521,7 +539,7 @@ void EditorSession::startRequest()
     promptCtx.prefix = prefix;
     promptCtx.suffix = suffix;
 
-    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, settings, promptCtx, cursor, m_generation);
+    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, settings, promptCtx, cursor, m_generation);
     const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
 
     CompletionRequest request;

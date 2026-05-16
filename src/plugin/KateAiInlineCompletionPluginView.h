@@ -27,6 +27,7 @@ namespace KateAiInlineCompletion
 class CopilotAuthManager;
 class EditorSession;
 class KWalletSecretStore;
+class RecentEditsTracker;
 }
 
 namespace KTextEditor
@@ -47,6 +48,8 @@ private Q_SLOTS:
 
 private:
     void setupActions();
+    void applyRecentEditsSettings();
+    void trackKnownDocuments();
     void ensureSession(KTextEditor::View *view);
     [[nodiscard]] KateAiInlineCompletion::EditorSession *activeSession() const;
     void updateActionState();
@@ -57,6 +60,7 @@ private:
     QNetworkAccessManager *m_networkManager = nullptr;
     KateAiInlineCompletion::KWalletSecretStore *m_secretStore = nullptr;
     KateAiInlineCompletion::CopilotAuthManager *m_copilotAuthManager = nullptr;
+    KateAiInlineCompletion::RecentEditsTracker *m_recentEditsTracker = nullptr;
 
     QAction *m_acceptFullAction = nullptr;
     QAction *m_acceptNextWordAction = nullptr;

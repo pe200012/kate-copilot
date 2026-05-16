@@ -10,6 +10,7 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 
 #include "auth/CopilotAuthManager.h"
+#include "context/RecentEditsTracker.h"
 #include "session/EditorSession.h"
 #include "settings/KWalletSecretStore.h"
 
@@ -34,6 +35,8 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     const WId wid = m_mainWindow->window() ? m_mainWindow->window()->winId() : 0;
     m_secretStore = new KateAiInlineCompletion::KWalletSecretStore(wid, this);
     m_copilotAuthManager = new KateAiInlineCompletion::CopilotAuthManager(m_secretStore, m_networkManager, this);
+    m_recentEditsTracker = new KateAiInlineCompletion::RecentEditsTracker(this);
+    applyRecentEditsSettings();
 
     setupActions();
     if (KXMLGUIFactory *factory = m_mainWindow->guiFactory()) {
@@ -41,6 +44,12 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     }
 
     connect(m_mainWindow, &KTextEditor::MainWindow::viewChanged, this, &KateAiInlineCompletionPluginView::onViewChanged);
+    connect(m_plugin, &KateAiInlineCompletionPlugin::settingsChanged, this, [this] {
+        applyRecentEditsSettings();
+        trackKnownDocuments();
+    });
+
+    trackKnownDocuments();
 
     const QList<KTextEditor::View *> views = m_mainWindow->views();
     if (!views.isEmpty()) {
@@ -63,8 +72,51 @@ void KateAiInlineCompletionPluginView::onViewChanged(KTextEditor::View *view)
         return;
     }
 
+    if (m_recentEditsTracker && m_plugin && m_plugin->settings().validated().enableRecentEditsContext) {
+        m_recentEditsTracker->trackDocument(view->document());
+    }
+
     ensureSession(view);
     updateActionState();
+}
+
+void KateAiInlineCompletionPluginView::applyRecentEditsSettings()
+{
+    if (!m_plugin || !m_recentEditsTracker) {
+        return;
+    }
+
+    const KateAiInlineCompletion::CompletionSettings settings = m_plugin->settings().validated();
+    KateAiInlineCompletion::RecentEditsTrackerOptions options;
+    options.maxFiles = settings.recentEditsMaxFiles;
+    options.maxEdits = settings.recentEditsMaxEdits;
+    options.diffContextLines = settings.recentEditsDiffContextLines;
+    options.maxCharsPerEdit = settings.recentEditsMaxCharsPerEdit;
+    options.debounceMs = settings.recentEditsDebounceMs;
+    options.maxLinesPerEdit = settings.recentEditsMaxLinesPerEdit;
+    m_recentEditsTracker->setOptions(options);
+    if (!settings.enableRecentEditsContext) {
+        m_recentEditsTracker->clear();
+    }
+}
+
+void KateAiInlineCompletionPluginView::trackKnownDocuments()
+{
+    if (!m_mainWindow || !m_recentEditsTracker || !m_plugin) {
+        return;
+    }
+
+    if (!m_plugin->settings().validated().enableRecentEditsContext) {
+        m_recentEditsTracker->clear();
+        return;
+    }
+
+    const QList<KTextEditor::View *> views = m_mainWindow->views();
+    for (KTextEditor::View *view : views) {
+        if (view && view->document()) {
+            m_recentEditsTracker->trackDocument(view->document());
+        }
+    }
 }
 
 void KateAiInlineCompletionPluginView::setupActions()
@@ -127,7 +179,17 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
         return;
     }
 
-    auto *session = new KateAiInlineCompletion::EditorSession(view, m_plugin, m_secretStore, m_networkManager, m_copilotAuthManager, view);
+    if (m_recentEditsTracker && view->document() && m_plugin && m_plugin->settings().validated().enableRecentEditsContext) {
+        m_recentEditsTracker->trackDocument(view->document());
+    }
+
+    auto *session = new KateAiInlineCompletion::EditorSession(view,
+                                                             m_plugin,
+                                                             m_secretStore,
+                                                             m_networkManager,
+                                                             m_copilotAuthManager,
+                                                             m_recentEditsTracker,
+                                                             view);
     m_sessions.insert(view, session);
 
     connect(session, &KateAiInlineCompletion::EditorSession::suggestionVisibilityChanged, this, [this] {

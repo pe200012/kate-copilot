@@ -45,6 +45,15 @@ void CompletionSettingsTest::defaultsAreValid()
     QVERIFY(d.maxContextChars >= CompletionSettings::kContextCharsMin);
     QVERIFY(d.maxContextChars <= CompletionSettings::kContextCharsMax);
 
+    QVERIFY(d.enableRecentEditsContext);
+    QCOMPARE(d.recentEditsMaxFiles, 20);
+    QCOMPARE(d.recentEditsMaxEdits, 8);
+    QCOMPARE(d.recentEditsDiffContextLines, 3);
+    QCOMPARE(d.recentEditsMaxCharsPerEdit, 2000);
+    QCOMPARE(d.recentEditsDebounceMs, 500);
+    QCOMPARE(d.recentEditsMaxLinesPerEdit, 10);
+    QCOMPARE(d.recentEditsActiveDocDistanceLimitFromCursor, 100);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -62,6 +71,13 @@ void CompletionSettingsTest::validationClampsBounds()
     s.maxSuffixChars = 999999;
     s.maxContextItems = 999999;
     s.maxContextChars = 999999;
+    s.recentEditsMaxFiles = 999999;
+    s.recentEditsMaxEdits = 999999;
+    s.recentEditsDiffContextLines = 999999;
+    s.recentEditsMaxCharsPerEdit = 999999;
+    s.recentEditsDebounceMs = 1;
+    s.recentEditsMaxLinesPerEdit = 999999;
+    s.recentEditsActiveDocDistanceLimitFromCursor = 999999;
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
     s.model = QString();
@@ -76,6 +92,13 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.maxSuffixChars, CompletionSettings::kSuffixMaxChars);
     QCOMPARE(v.maxContextItems, CompletionSettings::kContextItemsMax);
     QCOMPARE(v.maxContextChars, CompletionSettings::kContextCharsMax);
+    QCOMPARE(v.recentEditsMaxFiles, CompletionSettings::kRecentEditsMaxFilesMax);
+    QCOMPARE(v.recentEditsMaxEdits, CompletionSettings::kRecentEditsMaxEditsMax);
+    QCOMPARE(v.recentEditsDiffContextLines, CompletionSettings::kRecentEditsDiffContextLinesMax);
+    QCOMPARE(v.recentEditsMaxCharsPerEdit, CompletionSettings::kRecentEditsMaxCharsPerEditMax);
+    QCOMPARE(v.recentEditsDebounceMs, CompletionSettings::kRecentEditsDebounceMinMs);
+    QCOMPARE(v.recentEditsMaxLinesPerEdit, CompletionSettings::kRecentEditsMaxLinesPerEditMax);
+    QCOMPARE(v.recentEditsActiveDocDistanceLimitFromCursor, CompletionSettings::kRecentEditsActiveDocDistanceLimitMax);
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
     QVERIFY(!v.endpoint.isRelative());
@@ -116,6 +139,14 @@ void CompletionSettingsTest::roundTripConfig()
     in.enableContextualPrompt = false;
     in.maxContextItems = 3;
     in.maxContextChars = 2048;
+    in.enableRecentEditsContext = false;
+    in.recentEditsMaxFiles = 7;
+    in.recentEditsMaxEdits = 5;
+    in.recentEditsDiffContextLines = 2;
+    in.recentEditsMaxCharsPerEdit = 1500;
+    in.recentEditsDebounceMs = 250;
+    in.recentEditsMaxLinesPerEdit = 6;
+    in.recentEditsActiveDocDistanceLimitFromCursor = 60;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -135,6 +166,14 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.enableContextualPrompt, in.enableContextualPrompt);
     QCOMPARE(out.maxContextItems, in.maxContextItems);
     QCOMPARE(out.maxContextChars, in.maxContextChars);
+    QCOMPARE(out.enableRecentEditsContext, in.enableRecentEditsContext);
+    QCOMPARE(out.recentEditsMaxFiles, in.recentEditsMaxFiles);
+    QCOMPARE(out.recentEditsMaxEdits, in.recentEditsMaxEdits);
+    QCOMPARE(out.recentEditsDiffContextLines, in.recentEditsDiffContextLines);
+    QCOMPARE(out.recentEditsMaxCharsPerEdit, in.recentEditsMaxCharsPerEdit);
+    QCOMPARE(out.recentEditsDebounceMs, in.recentEditsDebounceMs);
+    QCOMPARE(out.recentEditsMaxLinesPerEdit, in.recentEditsMaxLinesPerEdit);
+    QCOMPARE(out.recentEditsActiveDocDistanceLimitFromCursor, in.recentEditsActiveDocDistanceLimitFromCursor);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);
