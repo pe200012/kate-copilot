@@ -101,6 +101,11 @@ namespace
 
     return hasCabalFile(dir);
 }
+
+[[nodiscard]] bool isAmbientTempGitRoot(const QDir &dir)
+{
+    return QFileInfo(dir.absolutePath()).absoluteFilePath() == QFileInfo(QDir::tempPath()).absoluteFilePath();
+}
 } // namespace
 
 QString ProjectContextResolver::localPathFromUri(const QString &uriOrPath)
@@ -140,7 +145,9 @@ QString ProjectContextResolver::findProjectRoot(const QString &path)
 
     while (true) {
         if (dir.exists(QStringLiteral(".git"))) {
-            return dir.absolutePath();
+            if (!isAmbientTempGitRoot(dir)) {
+                return dir.absolutePath();
+            }
         }
 
         if (markerRoot.isEmpty() && hasAnyProjectMarker(dir)) {
