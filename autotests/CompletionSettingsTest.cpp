@@ -54,6 +54,14 @@ void CompletionSettingsTest::defaultsAreValid()
     QCOMPARE(d.recentEditsMaxLinesPerEdit, 10);
     QCOMPARE(d.recentEditsActiveDocDistanceLimitFromCursor, 100);
 
+    QVERIFY(d.enableDiagnosticsContext);
+    QCOMPARE(d.diagnosticsMaxItems, 8);
+    QCOMPARE(d.diagnosticsMaxChars, 3000);
+    QCOMPARE(d.diagnosticsMaxLineDistance, 120);
+    QVERIFY(d.diagnosticsIncludeWarnings);
+    QVERIFY(!d.diagnosticsIncludeInformation);
+    QVERIFY(!d.diagnosticsIncludeHints);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -78,6 +86,9 @@ void CompletionSettingsTest::validationClampsBounds()
     s.recentEditsDebounceMs = 1;
     s.recentEditsMaxLinesPerEdit = 999999;
     s.recentEditsActiveDocDistanceLimitFromCursor = 999999;
+    s.diagnosticsMaxItems = 999999;
+    s.diagnosticsMaxChars = 999999;
+    s.diagnosticsMaxLineDistance = 999999;
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
     s.model = QString();
@@ -99,6 +110,9 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.recentEditsDebounceMs, CompletionSettings::kRecentEditsDebounceMinMs);
     QCOMPARE(v.recentEditsMaxLinesPerEdit, CompletionSettings::kRecentEditsMaxLinesPerEditMax);
     QCOMPARE(v.recentEditsActiveDocDistanceLimitFromCursor, CompletionSettings::kRecentEditsActiveDocDistanceLimitMax);
+    QCOMPARE(v.diagnosticsMaxItems, CompletionSettings::kDiagnosticsMaxItemsMax);
+    QCOMPARE(v.diagnosticsMaxChars, CompletionSettings::kDiagnosticsMaxCharsMax);
+    QCOMPARE(v.diagnosticsMaxLineDistance, CompletionSettings::kDiagnosticsMaxLineDistanceMax);
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
     QVERIFY(!v.endpoint.isRelative());
@@ -147,6 +161,13 @@ void CompletionSettingsTest::roundTripConfig()
     in.recentEditsDebounceMs = 250;
     in.recentEditsMaxLinesPerEdit = 6;
     in.recentEditsActiveDocDistanceLimitFromCursor = 60;
+    in.enableDiagnosticsContext = false;
+    in.diagnosticsMaxItems = 4;
+    in.diagnosticsMaxChars = 1234;
+    in.diagnosticsMaxLineDistance = 42;
+    in.diagnosticsIncludeWarnings = false;
+    in.diagnosticsIncludeInformation = true;
+    in.diagnosticsIncludeHints = true;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -174,6 +195,13 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.recentEditsDebounceMs, in.recentEditsDebounceMs);
     QCOMPARE(out.recentEditsMaxLinesPerEdit, in.recentEditsMaxLinesPerEdit);
     QCOMPARE(out.recentEditsActiveDocDistanceLimitFromCursor, in.recentEditsActiveDocDistanceLimitFromCursor);
+    QCOMPARE(out.enableDiagnosticsContext, in.enableDiagnosticsContext);
+    QCOMPARE(out.diagnosticsMaxItems, in.diagnosticsMaxItems);
+    QCOMPARE(out.diagnosticsMaxChars, in.diagnosticsMaxChars);
+    QCOMPARE(out.diagnosticsMaxLineDistance, in.diagnosticsMaxLineDistance);
+    QCOMPARE(out.diagnosticsIncludeWarnings, in.diagnosticsIncludeWarnings);
+    QCOMPARE(out.diagnosticsIncludeInformation, in.diagnosticsIncludeInformation);
+    QCOMPARE(out.diagnosticsIncludeHints, in.diagnosticsIncludeHints);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

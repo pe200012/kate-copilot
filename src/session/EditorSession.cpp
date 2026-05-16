@@ -10,6 +10,8 @@
 #include "auth/CopilotAuthManager.h"
 #include "context/ContextProviderRegistry.h"
 #include "context/CurrentFileContextProvider.h"
+#include "context/DiagnosticsContextProvider.h"
+#include "context/DiagnosticStore.h"
 #include "context/OpenTabsContextProvider.h"
 #include "context/ProjectTraitsContextProvider.h"
 #include "context/RecentEditsContextProvider.h"
@@ -82,9 +84,23 @@ static RecentEditsContextOptions recentEditsContextOptionsFromSettings(const Com
     return options;
 }
 
+static DiagnosticsContextOptions diagnosticsContextOptionsFromSettings(const CompletionSettings &settings)
+{
+    DiagnosticsContextOptions options;
+    options.enabled = settings.enableDiagnosticsContext;
+    options.maxItems = settings.diagnosticsMaxItems;
+    options.maxChars = settings.diagnosticsMaxChars;
+    options.maxLineDistance = settings.diagnosticsMaxLineDistance;
+    options.includeWarnings = settings.diagnosticsIncludeWarnings;
+    options.includeInformation = settings.diagnosticsIncludeInformation;
+    options.includeHints = settings.diagnosticsIncludeHints;
+    return options;
+}
+
 static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *view,
                                                           KTextEditor::Document *doc,
                                                           RecentEditsTracker *recentEditsTracker,
+                                                          DiagnosticStore *diagnosticStore,
                                                           const CompletionSettings &settings,
                                                           const PromptContext &promptCtx,
                                                           const KTextEditor::Cursor &cursor,
@@ -111,6 +127,9 @@ static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *vie
     registry.addProvider(std::make_unique<ProjectTraitsContextProvider>());
     if (settings.enableRecentEditsContext && recentEditsTracker) {
         registry.addProvider(std::make_unique<RecentEditsContextProvider>(recentEditsTracker, recentEditsContextOptionsFromSettings(settings)));
+    }
+    if (settings.enableDiagnosticsContext && diagnosticStore) {
+        registry.addProvider(std::make_unique<DiagnosticsContextProvider>(diagnosticStore, diagnosticsContextOptionsFromSettings(settings)));
     }
     registry.addProvider(std::make_unique<OpenTabsContextProvider>(view->mainWindow(), view));
 
@@ -152,6 +171,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
                              QNetworkAccessManager *networkManager,
                              CopilotAuthManager *copilotAuthManager,
                              RecentEditsTracker *recentEditsTracker,
+                             DiagnosticStore *diagnosticStore,
                              QObject *parent)
     : QObject(parent)
     , m_view(view)
@@ -160,6 +180,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
     , m_networkManager(networkManager)
     , m_copilotAuthManager(copilotAuthManager)
     , m_recentEditsTracker(recentEditsTracker)
+    , m_diagnosticStore(diagnosticStore)
 {
     m_debounceTimer.setSingleShot(true);
     connect(&m_debounceTimer, &QTimer::timeout, this, &EditorSession::onDebounceTimeout);
@@ -539,7 +560,7 @@ void EditorSession::startRequest()
     promptCtx.prefix = prefix;
     promptCtx.suffix = suffix;
 
-    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, settings, promptCtx, cursor, m_generation);
+    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
     const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
 
     CompletionRequest request;

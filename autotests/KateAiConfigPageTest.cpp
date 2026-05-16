@@ -74,6 +74,13 @@ void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()
     settings.recentEditsDebounceMs = 250;
     settings.recentEditsMaxLinesPerEdit = 6;
     settings.recentEditsActiveDocDistanceLimitFromCursor = 60;
+    settings.enableDiagnosticsContext = false;
+    settings.diagnosticsMaxItems = 4;
+    settings.diagnosticsMaxChars = 1234;
+    settings.diagnosticsMaxLineDistance = 42;
+    settings.diagnosticsIncludeWarnings = false;
+    settings.diagnosticsIncludeInformation = true;
+    settings.diagnosticsIncludeHints = true;
     plugin.setSettings(settings);
 
     KateAiConfigPage page(nullptr, &plugin);
@@ -88,6 +95,13 @@ void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()
     QCOMPARE(out.recentEditsDebounceMs, settings.recentEditsDebounceMs);
     QCOMPARE(out.recentEditsMaxLinesPerEdit, settings.recentEditsMaxLinesPerEdit);
     QCOMPARE(out.recentEditsActiveDocDistanceLimitFromCursor, settings.recentEditsActiveDocDistanceLimitFromCursor);
+    QCOMPARE(out.enableDiagnosticsContext, settings.enableDiagnosticsContext);
+    QCOMPARE(out.diagnosticsMaxItems, settings.diagnosticsMaxItems);
+    QCOMPARE(out.diagnosticsMaxChars, settings.diagnosticsMaxChars);
+    QCOMPARE(out.diagnosticsMaxLineDistance, settings.diagnosticsMaxLineDistance);
+    QCOMPARE(out.diagnosticsIncludeWarnings, settings.diagnosticsIncludeWarnings);
+    QCOMPARE(out.diagnosticsIncludeInformation, settings.diagnosticsIncludeInformation);
+    QCOMPARE(out.diagnosticsIncludeHints, settings.diagnosticsIncludeHints);
 }
 
 QTEST_MAIN(KateAiConfigPageTest)

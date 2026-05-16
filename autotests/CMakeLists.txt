@@ -68,6 +68,21 @@ ecm_add_test(RecentEditsContextProviderTest.cpp
         KF6::TextEditor
 )
 
+ecm_add_test(DiagnosticStoreTest.cpp
+    TEST_NAME kateaiinlinecompletion_diagnostic_store_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
+ecm_add_test(DiagnosticsContextProviderTest.cpp
+    TEST_NAME kateaiinlinecompletion_diagnostics_context_provider_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+
 ecm_add_test(GhostTextInlineNoteProviderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     TEST_NAME kateaiinlinecompletion_ghost_text_inline_note_provider_test
@@ -147,6 +162,8 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
@@ -189,6 +206,8 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp

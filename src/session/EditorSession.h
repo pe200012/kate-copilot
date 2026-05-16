@@ -40,6 +40,7 @@ namespace KateAiInlineCompletion
 
 class AbstractAIProvider;
 class CopilotAuthManager;
+class DiagnosticStore;
 class GhostTextInlineNoteProvider;
 class GhostTextOverlayWidget;
 class KWalletSecretStore;
@@ -56,6 +57,7 @@ public:
                   QNetworkAccessManager *networkManager,
                   CopilotAuthManager *copilotAuthManager,
                   RecentEditsTracker *recentEditsTracker,
+                  DiagnosticStore *diagnosticStore,
                   QObject *parent = nullptr);
 
     ~EditorSession() override;
@@ -123,6 +125,7 @@ private:
     QNetworkAccessManager *m_networkManager = nullptr;
     CopilotAuthManager *m_copilotAuthManager = nullptr;
     RecentEditsTracker *m_recentEditsTracker = nullptr;
+    DiagnosticStore *m_diagnosticStore = nullptr;
 
     QPointer<GhostTextOverlayWidget> m_overlay;
     std::unique_ptr<GhostTextInlineNoteProvider> m_inlineNoteProvider;

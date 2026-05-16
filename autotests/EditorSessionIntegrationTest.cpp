@@ -5,6 +5,7 @@
     Module: EditorSessionIntegrationTest
 */
 
+#include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "render/GhostTextOverlayWidget.h"
@@ -32,6 +33,7 @@
 #include <QVBoxLayout>
 
 using KateAiInlineCompletion::CompletionSettings;
+using KateAiInlineCompletion::DiagnosticStore;
 using KateAiInlineCompletion::EditorSession;
 using KateAiInlineCompletion::GhostTextOverlayWidget;
 using KateAiInlineCompletion::RecentEditsTracker;
@@ -139,6 +141,7 @@ struct SessionHarness {
     KateAiInlineCompletionPlugin plugin;
     QNetworkAccessManager manager;
     RecentEditsTracker recentEditsTracker;
+    DiagnosticStore diagnosticStore;
     EditorSession *session = nullptr;
     GhostTextOverlayWidget *overlay = nullptr;
 
@@ -173,7 +176,7 @@ struct SessionHarness {
         plugin.setSettings(settings);
 
         recentEditsTracker.trackDocument(doc.data(), QStringLiteral("/tmp/editor-session.cpp"));
-        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, view);
+        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, view);
         overlay = view->editorWidget()->findChild<GhostTextOverlayWidget *>();
         Q_ASSERT(overlay);
 

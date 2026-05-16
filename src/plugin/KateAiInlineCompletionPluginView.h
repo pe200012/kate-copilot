@@ -25,6 +25,7 @@ class QNetworkAccessManager;
 namespace KateAiInlineCompletion
 {
 class CopilotAuthManager;
+class DiagnosticStore;
 class EditorSession;
 class KWalletSecretStore;
 class RecentEditsTracker;
@@ -61,6 +62,7 @@ private:
     KateAiInlineCompletion::KWalletSecretStore *m_secretStore = nullptr;
     KateAiInlineCompletion::CopilotAuthManager *m_copilotAuthManager = nullptr;
     KateAiInlineCompletion::RecentEditsTracker *m_recentEditsTracker = nullptr;
+    KateAiInlineCompletion::DiagnosticStore *m_diagnosticStore = nullptr;
 
     QAction *m_acceptFullAction = nullptr;
     QAction *m_acceptNextWordAction = nullptr;

@@ -93,6 +93,9 @@ CompletionSettings CompletionSettings::validated() const
     out.recentEditsActiveDocDistanceLimitFromCursor = qBound(kRecentEditsActiveDocDistanceLimitMin,
                                                              out.recentEditsActiveDocDistanceLimitFromCursor,
                                                              kRecentEditsActiveDocDistanceLimitMax);
+    out.diagnosticsMaxItems = qBound(kDiagnosticsMaxItemsMin, out.diagnosticsMaxItems, kDiagnosticsMaxItemsMax);
+    out.diagnosticsMaxChars = qBound(kDiagnosticsMaxCharsMin, out.diagnosticsMaxChars, kDiagnosticsMaxCharsMax);
+    out.diagnosticsMaxLineDistance = qBound(kDiagnosticsMaxLineDistanceMin, out.diagnosticsMaxLineDistance, kDiagnosticsMaxLineDistanceMax);
 
     out.provider = out.provider.trimmed().toLower();
     if (!isSupportedProvider(out.provider)) {
@@ -151,6 +154,13 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.recentEditsMaxLinesPerEdit = group.readEntry("RecentEditsMaxLinesPerEdit", d.recentEditsMaxLinesPerEdit);
     out.recentEditsActiveDocDistanceLimitFromCursor = group.readEntry("RecentEditsActiveDocDistanceLimitFromCursor",
                                                                      d.recentEditsActiveDocDistanceLimitFromCursor);
+    out.enableDiagnosticsContext = group.readEntry("EnableDiagnosticsContext", d.enableDiagnosticsContext);
+    out.diagnosticsMaxItems = group.readEntry("DiagnosticsMaxItems", d.diagnosticsMaxItems);
+    out.diagnosticsMaxChars = group.readEntry("DiagnosticsMaxChars", d.diagnosticsMaxChars);
+    out.diagnosticsMaxLineDistance = group.readEntry("DiagnosticsMaxLineDistance", d.diagnosticsMaxLineDistance);
+    out.diagnosticsIncludeWarnings = group.readEntry("DiagnosticsIncludeWarnings", d.diagnosticsIncludeWarnings);
+    out.diagnosticsIncludeInformation = group.readEntry("DiagnosticsIncludeInformation", d.diagnosticsIncludeInformation);
+    out.diagnosticsIncludeHints = group.readEntry("DiagnosticsIncludeHints", d.diagnosticsIncludeHints);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -184,6 +194,13 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("RecentEditsDebounceMs", v.recentEditsDebounceMs);
     group.writeEntry("RecentEditsMaxLinesPerEdit", v.recentEditsMaxLinesPerEdit);
     group.writeEntry("RecentEditsActiveDocDistanceLimitFromCursor", v.recentEditsActiveDocDistanceLimitFromCursor);
+    group.writeEntry("EnableDiagnosticsContext", v.enableDiagnosticsContext);
+    group.writeEntry("DiagnosticsMaxItems", v.diagnosticsMaxItems);
+    group.writeEntry("DiagnosticsMaxChars", v.diagnosticsMaxChars);
+    group.writeEntry("DiagnosticsMaxLineDistance", v.diagnosticsMaxLineDistance);
+    group.writeEntry("DiagnosticsIncludeWarnings", v.diagnosticsIncludeWarnings);
+    group.writeEntry("DiagnosticsIncludeInformation", v.diagnosticsIncludeInformation);
+    group.writeEntry("DiagnosticsIncludeHints", v.diagnosticsIncludeHints);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

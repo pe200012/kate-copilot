@@ -49,6 +49,12 @@ struct CompletionSettings {
     static constexpr int kRecentEditsMaxLinesPerEditMax = 100;
     static constexpr int kRecentEditsActiveDocDistanceLimitMin = 0;
     static constexpr int kRecentEditsActiveDocDistanceLimitMax = 10000;
+    static constexpr int kDiagnosticsMaxItemsMin = 0;
+    static constexpr int kDiagnosticsMaxItemsMax = 50;
+    static constexpr int kDiagnosticsMaxCharsMin = 0;
+    static constexpr int kDiagnosticsMaxCharsMax = 30000;
+    static constexpr int kDiagnosticsMaxLineDistanceMin = 0;
+    static constexpr int kDiagnosticsMaxLineDistanceMax = 10000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -82,6 +88,14 @@ struct CompletionSettings {
     int recentEditsDebounceMs = 500;
     int recentEditsMaxLinesPerEdit = 10;
     int recentEditsActiveDocDistanceLimitFromCursor = 100;
+
+    bool enableDiagnosticsContext = true;
+    int diagnosticsMaxItems = 8;
+    int diagnosticsMaxChars = 3000;
+    int diagnosticsMaxLineDistance = 120;
+    bool diagnosticsIncludeWarnings = true;
+    bool diagnosticsIncludeInformation = false;
+    bool diagnosticsIncludeHints = false;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

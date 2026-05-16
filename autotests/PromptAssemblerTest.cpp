@@ -68,6 +68,7 @@ private Q_SLOTS:
     void traitsRenderBeforeFimMarkers();
     void codeSnippetsIncludePathHeaders();
     void recentEditsRenderAsEditPatternBlock();
+    void diagnosticsRenderAsCommentBlock();
     void budgetDropsLowerImportanceItemsFirst();
     void disabledContextKeepsFimPromptValid();
 };
@@ -122,6 +123,30 @@ void PromptAssemblerTest::recentEditsRenderAsEditPatternBlock()
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("+ newName();")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("// End of recent edits")));
     QVERIFY(prompt.userPrompt.indexOf(QStringLiteral("Recently edited files")) < prompt.userPrompt.indexOf(QStringLiteral("<|fim_prefix|>")));
+}
+
+void PromptAssemblerTest::diagnosticsRenderAsCommentBlock()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 2000;
+
+    ContextItem item;
+    item.kind = ContextItem::Kind::DiagnosticBag;
+    item.providerId = QStringLiteral("diagnostics");
+    item.id = QStringLiteral("src/foo.cpp");
+    item.importance = 65;
+    item.name = QStringLiteral("src/foo.cpp");
+    item.value = QStringLiteral("42:13 - error CLANG: use of undeclared identifier 'bar'\n57:9 - warning CLANG-Wunused-variable: unused variable 'x'");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{item},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Consider these diagnostics from src/foo.cpp:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// 42:13 - error CLANG: use of undeclared identifier 'bar'")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// 57:9 - warning CLANG-Wunused-variable: unused variable 'x'")));
+    QVERIFY(prompt.userPrompt.indexOf(QStringLiteral("Consider these diagnostics")) < prompt.userPrompt.indexOf(QStringLiteral("<|fim_prefix|>")));
 }
 
 void PromptAssemblerTest::budgetDropsLowerImportanceItemsFirst()

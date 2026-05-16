@@ -10,6 +10,7 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 
 #include "auth/CopilotAuthManager.h"
+#include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
 #include "session/EditorSession.h"
 #include "settings/KWalletSecretStore.h"
@@ -36,6 +37,7 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     m_secretStore = new KateAiInlineCompletion::KWalletSecretStore(wid, this);
     m_copilotAuthManager = new KateAiInlineCompletion::CopilotAuthManager(m_secretStore, m_networkManager, this);
     m_recentEditsTracker = new KateAiInlineCompletion::RecentEditsTracker(this);
+    m_diagnosticStore = new KateAiInlineCompletion::DiagnosticStore(this);
     applyRecentEditsSettings();
 
     setupActions();
@@ -59,6 +61,12 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
 
 KateAiInlineCompletionPluginView::~KateAiInlineCompletionPluginView()
 {
+    const auto sessions = m_sessions.values();
+    m_sessions.clear();
+    for (KateAiInlineCompletion::EditorSession *session : sessions) {
+        delete session;
+    }
+
     if (m_mainWindow) {
         if (KXMLGUIFactory *factory = m_mainWindow->guiFactory()) {
             factory->removeClient(this);
@@ -189,6 +197,7 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
                                                              m_networkManager,
                                                              m_copilotAuthManager,
                                                              m_recentEditsTracker,
+                                                             m_diagnosticStore,
                                                              view);
     m_sessions.insert(view, session);
 
