@@ -25,6 +25,7 @@
 #include "prompt/PromptTemplate.h"
 #include "render/GhostTextInlineNoteProvider.h"
 #include "render/GhostTextOverlayWidget.h"
+#include "session/CompletionStrategyEngine.h"
 #include "session/SuggestionPostProcessor.h"
 #include "settings/CompletionSettings.h"
 #include "settings/KWalletSecretStore.h"
@@ -43,6 +44,8 @@
 
 #include <limits>
 #include <memory>
+#include <utility>
+#include <utility>
 
 namespace KateAiInlineCompletion
 {
@@ -166,6 +169,76 @@ static QString nextNonEmptyLineAfter(KTextEditor::Document *doc, int line)
     }
 
     return {};
+}
+
+static QString safeDocumentLine(KTextEditor::Document *doc, int line)
+{
+    if (!doc || line < 0 || line >= doc->lines()) {
+        return {};
+    }
+
+    return doc->line(line);
+}
+
+static QString leftOfCursorOnLine(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
+{
+    const QString line = safeDocumentLine(doc, cursor.line());
+    const int column = qBound(0, cursor.column(), line.size());
+    return line.left(column);
+}
+
+static QString rightOfCursorOnLine(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
+{
+    const QString line = safeDocumentLine(doc, cursor.line());
+    const int column = qBound(0, cursor.column(), line.size());
+    return line.mid(column);
+}
+
+static CompletionStrategyRequest completionStrategyRequestFromDocument(KTextEditor::Document *doc,
+                                                                       const KTextEditor::Cursor &cursor,
+                                                                       const CompletionSettings &settings,
+                                                                       const QString &filePath,
+                                                                       const QString &language,
+                                                                       const QString &prefix,
+                                                                       const QString &suffix,
+                                                                       bool manualTrigger,
+                                                                       bool afterPartialAccept,
+                                                                       bool afterFullAccept)
+{
+    CompletionStrategyRequest request;
+    request.providerId = settings.provider;
+    request.languageId = language;
+    request.filePath = filePath;
+    request.prefix = prefix;
+    request.suffix = suffix;
+    request.currentLinePrefix = leftOfCursorOnLine(doc, cursor);
+    request.currentLineSuffix = rightOfCursorOnLine(doc, cursor);
+    request.previousLine = safeDocumentLine(doc, cursor.line() - 1);
+    request.nextLine = safeDocumentLine(doc, cursor.line() + 1);
+    request.cursor = cursor;
+    request.manualTrigger = manualTrigger;
+    request.afterPartialAccept = afterPartialAccept;
+    request.afterFullAccept = afterFullAccept;
+    return request;
+}
+
+static void appendStrategyStopSequences(QStringList &target, const QStringList &additional, int maxStopSequences = 4)
+{
+    for (const QString &stop : additional) {
+        if (stop.isEmpty() || target.contains(stop)) {
+            continue;
+        }
+
+        if (target.size() < maxStopSequences) {
+            target.push_back(stop);
+            continue;
+        }
+
+        const int codeFenceIndex = target.indexOf(QStringLiteral("```"));
+        if (codeFenceIndex >= 0) {
+            target[codeFenceIndex] = stop;
+        }
+    }
 }
 
 static SuggestionProcessingContext suggestionProcessingContext(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
@@ -472,6 +545,9 @@ void EditorSession::onDocumentTextChanged(KTextEditor::Document *document)
 void EditorSession::bumpGeneration()
 {
     ++m_generation;
+    m_nextRequestManualTrigger = false;
+    m_nextRequestAfterPartialAccept = false;
+    m_nextRequestAfterFullAccept = false;
 
     if (m_activeRequestId != 0 && m_provider) {
         m_provider->cancel(m_activeRequestId);
@@ -516,6 +592,10 @@ void EditorSession::startRequest()
     if (!doc) {
         return;
     }
+
+    const bool manualTrigger = std::exchange(m_nextRequestManualTrigger, false);
+    const bool afterPartialAccept = std::exchange(m_nextRequestAfterPartialAccept, false);
+    const bool afterFullAccept = std::exchange(m_nextRequestAfterFullAccept, false);
 
     const CompletionSettings settings = m_plugin->settings().validated();
     if (!settings.enabled) {
@@ -578,12 +658,23 @@ void EditorSession::startRequest()
 
     const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
     const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
+    const CompletionStrategy strategy = CompletionStrategyEngine::choose(completionStrategyRequestFromDocument(doc,
+                                                                                                               cursor,
+                                                                                                               settings,
+                                                                                                               filePath,
+                                                                                                               language,
+                                                                                                               prefix,
+                                                                                                               suffix,
+                                                                                                               manualTrigger,
+                                                                                                               afterPartialAccept,
+                                                                                                               afterFullAccept),
+                                                                         settings);
 
     CompletionRequest request;
     request.endpoint = endpoint;
     request.model = settings.model;
-    request.maxTokens = 512;
-    request.temperature = 0.2;
+    request.maxTokens = strategy.maxTokens;
+    request.temperature = strategy.temperature;
 
     if (providerIsCopilot) {
         CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
@@ -593,6 +684,7 @@ void EditorSession::startRequest()
         request.suffix = built.suffix;
         request.nwo = settings.copilotNwo;
         request.stopSequences = {QStringLiteral("```")};
+        appendStrategyStopSequences(request.stopSequences, strategy.stopSequences);
 
         QJsonObject extra;
         extra[QStringLiteral("language")] = built.languageId;
@@ -606,6 +698,7 @@ void EditorSession::startRequest()
         request.systemPrompt = built.systemPrompt;
         request.userPrompt = built.userPrompt;
         request.stopSequences = built.stopSequences;
+        appendStrategyStopSequences(request.stopSequences, strategy.stopSequences);
     }
 
     if (m_activeRequestId != 0) {
@@ -664,7 +757,12 @@ void EditorSession::dismissSuggestion()
 
 void EditorSession::triggerSuggestion()
 {
+    const bool afterPartialAccept = m_nextRequestAfterPartialAccept;
+    const bool afterFullAccept = m_nextRequestAfterFullAccept;
     bumpGeneration();
+    m_nextRequestManualTrigger = true;
+    m_nextRequestAfterPartialAccept = afterPartialAccept;
+    m_nextRequestAfterFullAccept = afterFullAccept;
     startRequest();
 }
 
@@ -709,6 +807,9 @@ void EditorSession::acceptSuggestion()
     if (!ok) {
         m_ignoreNextViewSignals = 0;
         showError(i18n("Failed to insert AI completion into document"));
+    } else {
+        m_nextRequestAfterFullAccept = true;
+        m_nextRequestAfterPartialAccept = false;
     }
 }
 
@@ -769,6 +870,9 @@ void EditorSession::acceptPartial(const QString &chunk)
         bumpGeneration();
         return;
     }
+
+    m_nextRequestAfterPartialAccept = true;
+    m_nextRequestAfterFullAccept = false;
 
     if (!syncAnchorFromTracker()) {
         bumpGeneration();

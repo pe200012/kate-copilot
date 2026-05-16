@@ -113,6 +113,11 @@ CompletionSettings CompletionSettings::validated() const
     out.relatedFilesMaxCharsPerFile = qBound(kRelatedFilesMaxCharsPerFileMin,
                                              out.relatedFilesMaxCharsPerFile,
                                              kRelatedFilesMaxCharsPerFileMax);
+    out.singleLineMaxTokens = qBound(kStrategyMaxTokensMin, out.singleLineMaxTokens, kStrategyMaxTokensMax);
+    out.multilineMaxTokens = qBound(kStrategyMaxTokensMin, out.multilineMaxTokens, kStrategyMaxTokensMax);
+    out.manualMultilineMaxTokens = qBound(kStrategyMaxTokensMin, out.manualMultilineMaxTokens, kStrategyMaxTokensMax);
+    out.afterAcceptMaxTokens = qBound(kStrategyMaxTokensMin, out.afterAcceptMaxTokens, kStrategyMaxTokensMax);
+    out.completionTemperature = qBound(kCompletionTemperatureMin, out.completionTemperature, kCompletionTemperatureMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
 
     out.provider = out.provider.trimmed().toLower();
@@ -186,6 +191,13 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.relatedFilesMaxCharsPerFile = group.readEntry("RelatedFilesMaxCharsPerFile", d.relatedFilesMaxCharsPerFile);
     out.relatedFilesPreferOpenTabs = group.readEntry("RelatedFilesPreferOpenTabs", d.relatedFilesPreferOpenTabs);
     out.contextExcludePatterns = group.readEntry("ContextExcludePatterns", d.contextExcludePatterns);
+    out.enableCompletionStrategy = group.readEntry("EnableCompletionStrategy", d.enableCompletionStrategy);
+    out.singleLineMaxTokens = group.readEntry("SingleLineMaxTokens", d.singleLineMaxTokens);
+    out.multilineMaxTokens = group.readEntry("MultilineMaxTokens", d.multilineMaxTokens);
+    out.manualMultilineMaxTokens = group.readEntry("ManualMultilineMaxTokens", d.manualMultilineMaxTokens);
+    out.afterAcceptMaxTokens = group.readEntry("AfterAcceptMaxTokens", d.afterAcceptMaxTokens);
+    out.completionTemperature = group.readEntry("CompletionTemperature", d.completionTemperature);
+    out.singleLineStopAtNewline = group.readEntry("SingleLineStopAtNewline", d.singleLineStopAtNewline);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -233,6 +245,13 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("RelatedFilesMaxCharsPerFile", v.relatedFilesMaxCharsPerFile);
     group.writeEntry("RelatedFilesPreferOpenTabs", v.relatedFilesPreferOpenTabs);
     group.writeEntry("ContextExcludePatterns", v.contextExcludePatterns);
+    group.writeEntry("EnableCompletionStrategy", v.enableCompletionStrategy);
+    group.writeEntry("SingleLineMaxTokens", v.singleLineMaxTokens);
+    group.writeEntry("MultilineMaxTokens", v.multilineMaxTokens);
+    group.writeEntry("ManualMultilineMaxTokens", v.manualMultilineMaxTokens);
+    group.writeEntry("AfterAcceptMaxTokens", v.afterAcceptMaxTokens);
+    group.writeEntry("CompletionTemperature", v.completionTemperature);
+    group.writeEntry("SingleLineStopAtNewline", v.singleLineStopAtNewline);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

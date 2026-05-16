@@ -231,6 +231,8 @@ private Q_SLOTS:
     void ctrlRightAcceptsNextWord();
     void ctrlAltRightAcceptsNextLine();
     void promptContextSlotsExcludeCurrentFileMetadataTraits();
+    void requestUsesCompletionStrategySettings();
+    void afterAcceptRequestUsesAfterAcceptStrategy();
     void tabAcceptsStreamedSuggestion();
     void tabAcceptsSuggestionWithRestOfLineOverlap();
     void escapeClearsStreamedSuggestion();
@@ -343,6 +345,56 @@ void EditorSessionIntegrationTest::promptContextSlotsExcludeCurrentFileMetadataT
     QVERIFY(!body.contains("language:"));
     QVERIFY(!body.contains("cursor_line:"));
     QVERIFY(!body.contains("cursor_column:"));
+}
+
+void EditorSessionIntegrationTest::requestUsesCompletionStrategySettings()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost()"));
+
+    SessionHarness harness(server.endpoint());
+    CompletionSettings settings = harness.plugin.settings();
+    settings.singleLineMaxTokens = 37;
+    settings.completionTemperature = 0.4;
+    settings.singleLineStopAtNewline = true;
+    harness.plugin.setSettings(settings);
+
+    waitForSuggestion(server, harness.view, harness.session);
+
+    const QJsonDocument document = QJsonDocument::fromJson(server.lastRequestBody());
+    QVERIFY(document.isObject());
+    const QJsonObject payload = document.object();
+    QCOMPARE(payload.value(QStringLiteral("max_tokens")).toInt(), 37);
+    QCOMPARE(payload.value(QStringLiteral("temperature")).toDouble(), 0.4);
+    const QJsonArray stopSequences = payload.value(QStringLiteral("stop")).toArray();
+    QVERIFY(stopSequences.size() <= 4);
+    QVERIFY(stopSequences.contains(QStringLiteral("\n")));
+}
+
+void EditorSessionIntegrationTest::afterAcceptRequestUsesAfterAcceptStrategy()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost()"));
+
+    SessionHarness harness(server.endpoint());
+    CompletionSettings settings = harness.plugin.settings();
+    settings.singleLineMaxTokens = 37;
+    settings.afterAcceptMaxTokens = 55;
+    harness.plugin.setSettings(settings);
+
+    waitForSuggestion(server, harness.view, harness.session);
+    const int firstRequestCount = server.requestCount();
+
+    harness.session->acceptFullSuggestion();
+    harness.session->triggerSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > firstRequestCount, 2000);
+
+    const QJsonDocument document = QJsonDocument::fromJson(server.lastRequestBody());
+    QVERIFY(document.isObject());
+    const QJsonObject payload = document.object();
+    QCOMPARE(payload.value(QStringLiteral("max_tokens")).toInt(), 55);
 }
 
 void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()

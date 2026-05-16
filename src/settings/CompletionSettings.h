@@ -62,6 +62,10 @@ struct CompletionSettings {
     static constexpr int kRelatedFilesMaxCharsMax = 50000;
     static constexpr int kRelatedFilesMaxCharsPerFileMin = 200;
     static constexpr int kRelatedFilesMaxCharsPerFileMax = 20000;
+    static constexpr int kStrategyMaxTokensMin = 8;
+    static constexpr int kStrategyMaxTokensMax = 1024;
+    static constexpr double kCompletionTemperatureMin = 0.0;
+    static constexpr double kCompletionTemperatureMax = 1.5;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -111,6 +115,14 @@ struct CompletionSettings {
     int relatedFilesMaxCharsPerFile = 4000;
     bool relatedFilesPreferOpenTabs = true;
     QStringList contextExcludePatterns;
+
+    bool enableCompletionStrategy = true;
+    int singleLineMaxTokens = 64;
+    int multilineMaxTokens = 192;
+    int manualMultilineMaxTokens = 256;
+    int afterAcceptMaxTokens = 96;
+    double completionTemperature = 0.2;
+    bool singleLineStopAtNewline = true;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

@@ -69,6 +69,14 @@ void CompletionSettingsTest::defaultsAreValid()
     QVERIFY(d.relatedFilesPreferOpenTabs);
     QVERIFY(d.contextExcludePatterns.isEmpty());
 
+    QVERIFY(d.enableCompletionStrategy);
+    QCOMPARE(d.singleLineMaxTokens, 64);
+    QCOMPARE(d.multilineMaxTokens, 192);
+    QCOMPARE(d.manualMultilineMaxTokens, 256);
+    QCOMPARE(d.afterAcceptMaxTokens, 96);
+    QCOMPARE(d.completionTemperature, 0.2);
+    QVERIFY(d.singleLineStopAtNewline);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -99,6 +107,11 @@ void CompletionSettingsTest::validationClampsBounds()
     s.relatedFilesMaxFiles = 999999;
     s.relatedFilesMaxChars = 999999;
     s.relatedFilesMaxCharsPerFile = 999999;
+    s.singleLineMaxTokens = 1;
+    s.multilineMaxTokens = 999999;
+    s.manualMultilineMaxTokens = 999999;
+    s.afterAcceptMaxTokens = 1;
+    s.completionTemperature = 99.0;
     s.contextExcludePatterns = {QStringLiteral(" *.tmp "), QString(), QStringLiteral("build/generated/*")};
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
@@ -127,6 +140,11 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.relatedFilesMaxFiles, CompletionSettings::kRelatedFilesMaxFilesMax);
     QCOMPARE(v.relatedFilesMaxChars, CompletionSettings::kRelatedFilesMaxCharsMax);
     QCOMPARE(v.relatedFilesMaxCharsPerFile, CompletionSettings::kRelatedFilesMaxCharsPerFileMax);
+    QCOMPARE(v.singleLineMaxTokens, CompletionSettings::kStrategyMaxTokensMin);
+    QCOMPARE(v.multilineMaxTokens, CompletionSettings::kStrategyMaxTokensMax);
+    QCOMPARE(v.manualMultilineMaxTokens, CompletionSettings::kStrategyMaxTokensMax);
+    QCOMPARE(v.afterAcceptMaxTokens, CompletionSettings::kStrategyMaxTokensMin);
+    QCOMPARE(v.completionTemperature, CompletionSettings::kCompletionTemperatureMax);
     QCOMPARE(v.contextExcludePatterns, QStringList({QStringLiteral("*.tmp"), QStringLiteral("build/generated/*")}));
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
@@ -190,6 +208,13 @@ void CompletionSettingsTest::roundTripConfig()
     in.relatedFilesMaxCharsPerFile = 2500;
     in.relatedFilesPreferOpenTabs = false;
     in.contextExcludePatterns = {QStringLiteral("*.secret"), QStringLiteral("generated/*")};
+    in.enableCompletionStrategy = false;
+    in.singleLineMaxTokens = 33;
+    in.multilineMaxTokens = 222;
+    in.manualMultilineMaxTokens = 333;
+    in.afterAcceptMaxTokens = 44;
+    in.completionTemperature = 0.7;
+    in.singleLineStopAtNewline = false;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -231,6 +256,13 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.relatedFilesMaxCharsPerFile, in.relatedFilesMaxCharsPerFile);
     QCOMPARE(out.relatedFilesPreferOpenTabs, in.relatedFilesPreferOpenTabs);
     QCOMPARE(out.contextExcludePatterns, in.contextExcludePatterns);
+    QCOMPARE(out.enableCompletionStrategy, in.enableCompletionStrategy);
+    QCOMPARE(out.singleLineMaxTokens, in.singleLineMaxTokens);
+    QCOMPARE(out.multilineMaxTokens, in.multilineMaxTokens);
+    QCOMPARE(out.manualMultilineMaxTokens, in.manualMultilineMaxTokens);
+    QCOMPARE(out.afterAcceptMaxTokens, in.afterAcceptMaxTokens);
+    QCOMPARE(out.completionTemperature, in.completionTemperature);
+    QCOMPARE(out.singleLineStopAtNewline, in.singleLineStopAtNewline);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

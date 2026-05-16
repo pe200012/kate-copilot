@@ -12,6 +12,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -28,6 +29,7 @@ private Q_SLOTS:
     void showsProviderRecommendationShortcutHintAndContextControls();
     void contextualSettingsApplyFromUi();
     void contextControlsFollowMasterAndRelatedFileToggles();
+    void strategySettingsApplyFromUi();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -52,6 +54,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *diagnostics = page.findChild<QCheckBox *>(QStringLiteral("diagnosticsContextCheckBox"));
     auto *relatedFiles = page.findChild<QCheckBox *>(QStringLiteral("relatedFilesContextCheckBox"));
     auto *excludePatterns = page.findChild<QLineEdit *>(QStringLiteral("contextExcludePatternsEdit"));
+    auto *strategyEnabled = page.findChild<QCheckBox *>(QStringLiteral("adaptiveStrategyCheckBox"));
+    auto *singleLineMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("singleLineMaxTokensSpinBox"));
+    auto *temperature = page.findChild<QDoubleSpinBox *>(QStringLiteral("completionTemperatureSpinBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -63,6 +68,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(diagnostics);
     QVERIFY(relatedFiles);
     QVERIFY(excludePatterns);
+    QVERIFY(strategyEnabled);
+    QVERIFY(singleLineMaxTokens);
+    QVERIFY(temperature);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -172,6 +180,47 @@ void KateAiConfigPageTest::contextControlsFollowMasterAndRelatedFileToggles()
     relatedFiles->setChecked(true);
     QVERIFY(relatedFilesMaxFiles->isEnabled());
     QVERIFY(excludePatterns->isEnabled());
+}
+
+void KateAiConfigPageTest::strategySettingsApplyFromUi()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *strategyEnabled = page.findChild<QCheckBox *>(QStringLiteral("adaptiveStrategyCheckBox"));
+    auto *singleLineMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("singleLineMaxTokensSpinBox"));
+    auto *multilineMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("multilineMaxTokensSpinBox"));
+    auto *manualMultilineMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("manualMultilineMaxTokensSpinBox"));
+    auto *afterAcceptMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("afterAcceptMaxTokensSpinBox"));
+    auto *temperature = page.findChild<QDoubleSpinBox *>(QStringLiteral("completionTemperatureSpinBox"));
+    auto *singleLineStopAtNewline = page.findChild<QCheckBox *>(QStringLiteral("singleLineStopAtNewlineCheckBox"));
+
+    QVERIFY(strategyEnabled);
+    QVERIFY(singleLineMaxTokens);
+    QVERIFY(multilineMaxTokens);
+    QVERIFY(manualMultilineMaxTokens);
+    QVERIFY(afterAcceptMaxTokens);
+    QVERIFY(temperature);
+    QVERIFY(singleLineStopAtNewline);
+
+    strategyEnabled->setChecked(false);
+    singleLineMaxTokens->setValue(37);
+    multilineMaxTokens->setValue(211);
+    manualMultilineMaxTokens->setValue(333);
+    afterAcceptMaxTokens->setValue(55);
+    temperature->setValue(0.6);
+    singleLineStopAtNewline->setChecked(false);
+
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableCompletionStrategy, false);
+    QCOMPARE(out.singleLineMaxTokens, 37);
+    QCOMPARE(out.multilineMaxTokens, 211);
+    QCOMPARE(out.manualMultilineMaxTokens, 333);
+    QCOMPARE(out.afterAcceptMaxTokens, 55);
+    QCOMPARE(out.completionTemperature, 0.6);
+    QCOMPARE(out.singleLineStopAtNewline, false);
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()

@@ -16,6 +16,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QGuiApplication>
@@ -198,6 +199,51 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_promptTemplate->addItem(i18n("FIM v2"), QString::fromLatin1(KateAiInlineCompletion::CompletionSettings::kPromptTemplateFimV2));
     m_promptTemplate->addItem(i18n("FIM v1"), QString::fromLatin1(KateAiInlineCompletion::CompletionSettings::kPromptTemplateFimV1));
     promptForm->addRow(i18n("Template"), m_promptTemplate);
+
+    m_strategyBox = new QGroupBox(i18n("Strategy"), this);
+    root->addWidget(m_strategyBox);
+
+    auto *strategyForm = new QFormLayout(m_strategyBox);
+
+    m_enableCompletionStrategy = new QCheckBox(i18n("Enable adaptive completion strategy"), m_strategyBox);
+    m_enableCompletionStrategy->setObjectName(QStringLiteral("adaptiveStrategyCheckBox"));
+    strategyForm->addRow(m_enableCompletionStrategy);
+
+    m_singleLineMaxTokens = new QSpinBox(m_strategyBox);
+    m_singleLineMaxTokens->setObjectName(QStringLiteral("singleLineMaxTokensSpinBox"));
+    m_singleLineMaxTokens->setRange(KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMin,
+                                    KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMax);
+    strategyForm->addRow(i18n("Single-line max tokens"), m_singleLineMaxTokens);
+
+    m_multilineMaxTokens = new QSpinBox(m_strategyBox);
+    m_multilineMaxTokens->setObjectName(QStringLiteral("multilineMaxTokensSpinBox"));
+    m_multilineMaxTokens->setRange(KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMin,
+                                   KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMax);
+    strategyForm->addRow(i18n("Multiline max tokens"), m_multilineMaxTokens);
+
+    m_manualMultilineMaxTokens = new QSpinBox(m_strategyBox);
+    m_manualMultilineMaxTokens->setObjectName(QStringLiteral("manualMultilineMaxTokensSpinBox"));
+    m_manualMultilineMaxTokens->setRange(KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMin,
+                                         KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMax);
+    strategyForm->addRow(i18n("Manual multiline max tokens"), m_manualMultilineMaxTokens);
+
+    m_afterAcceptMaxTokens = new QSpinBox(m_strategyBox);
+    m_afterAcceptMaxTokens->setObjectName(QStringLiteral("afterAcceptMaxTokensSpinBox"));
+    m_afterAcceptMaxTokens->setRange(KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMin,
+                                     KateAiInlineCompletion::CompletionSettings::kStrategyMaxTokensMax);
+    strategyForm->addRow(i18n("After-accept max tokens"), m_afterAcceptMaxTokens);
+
+    m_completionTemperature = new QDoubleSpinBox(m_strategyBox);
+    m_completionTemperature->setObjectName(QStringLiteral("completionTemperatureSpinBox"));
+    m_completionTemperature->setRange(KateAiInlineCompletion::CompletionSettings::kCompletionTemperatureMin,
+                                      KateAiInlineCompletion::CompletionSettings::kCompletionTemperatureMax);
+    m_completionTemperature->setDecimals(2);
+    m_completionTemperature->setSingleStep(0.05);
+    strategyForm->addRow(i18n("Temperature"), m_completionTemperature);
+
+    m_singleLineStopAtNewline = new QCheckBox(i18n("Stop single-line suggestions at newline"), m_strategyBox);
+    m_singleLineStopAtNewline->setObjectName(QStringLiteral("singleLineStopAtNewlineCheckBox"));
+    strategyForm->addRow(m_singleLineStopAtNewline);
 
     m_contextBox = new QGroupBox(i18n("Context"), this);
     root->addWidget(m_contextBox);
@@ -382,6 +428,14 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
 
     connect(m_promptTemplate, qOverload<int>(&QComboBox::currentIndexChanged), this, &KateAiConfigPage::slotUiChanged);
 
+    connect(m_enableCompletionStrategy, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_singleLineMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_multilineMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_manualMultilineMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_afterAcceptMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_completionTemperature, qOverload<double>(&QDoubleSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_singleLineStopAtNewline, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+
     connect(m_enableContextualPrompt, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextItems, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
@@ -484,6 +538,7 @@ void KateAiConfigPage::reset()
 void KateAiConfigPage::slotUiChanged()
 {
     updateContextControlsUi();
+    updateStrategyControlsUi();
     setChanged(true);
 }
 
@@ -700,7 +755,16 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_relatedFilesMaxCharsPerFile->setValue(v.relatedFilesMaxCharsPerFile);
     m_contextExcludePatterns->setText(v.contextExcludePatterns.join(QStringLiteral("; ")));
 
+    m_enableCompletionStrategy->setChecked(v.enableCompletionStrategy);
+    m_singleLineMaxTokens->setValue(v.singleLineMaxTokens);
+    m_multilineMaxTokens->setValue(v.multilineMaxTokens);
+    m_manualMultilineMaxTokens->setValue(v.manualMultilineMaxTokens);
+    m_afterAcceptMaxTokens->setValue(v.afterAcceptMaxTokens);
+    m_completionTemperature->setValue(v.completionTemperature);
+    m_singleLineStopAtNewline->setChecked(v.singleLineStopAtNewline);
+
     updateContextControlsUi();
+    updateStrategyControlsUi();
     updateCredentialsUi();
 }
 
@@ -730,6 +794,14 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.relatedFilesMaxChars = m_relatedFilesMaxChars->value();
     s.relatedFilesMaxCharsPerFile = m_relatedFilesMaxCharsPerFile->value();
     s.contextExcludePatterns = m_contextExcludePatterns->text().split(QLatin1Char(';'), Qt::SkipEmptyParts);
+
+    s.enableCompletionStrategy = m_enableCompletionStrategy->isChecked();
+    s.singleLineMaxTokens = m_singleLineMaxTokens->value();
+    s.multilineMaxTokens = m_multilineMaxTokens->value();
+    s.manualMultilineMaxTokens = m_manualMultilineMaxTokens->value();
+    s.afterAcceptMaxTokens = m_afterAcceptMaxTokens->value();
+    s.completionTemperature = m_completionTemperature->value();
+    s.singleLineStopAtNewline = m_singleLineStopAtNewline->isChecked();
 
     s.copilotClientId = m_copilotClientId->text().trimmed();
     s.copilotNwo = m_copilotNwo->text().trimmed();
@@ -764,6 +836,21 @@ void KateAiConfigPage::updateContextControlsUi()
     m_relatedFilesMaxChars->setEnabled(relatedEnabled);
     m_relatedFilesMaxCharsPerFile->setEnabled(relatedEnabled);
     m_contextExcludePatterns->setEnabled(relatedEnabled);
+}
+
+void KateAiConfigPage::updateStrategyControlsUi()
+{
+    if (!m_enableCompletionStrategy) {
+        return;
+    }
+
+    const bool strategyEnabled = m_enableCompletionStrategy->isChecked();
+    m_singleLineMaxTokens->setEnabled(strategyEnabled);
+    m_multilineMaxTokens->setEnabled(strategyEnabled);
+    m_manualMultilineMaxTokens->setEnabled(strategyEnabled);
+    m_afterAcceptMaxTokens->setEnabled(strategyEnabled);
+    m_completionTemperature->setEnabled(strategyEnabled);
+    m_singleLineStopAtNewline->setEnabled(strategyEnabled);
 }
 
 void KateAiConfigPage::updateCredentialsUi()

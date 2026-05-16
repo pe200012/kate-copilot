@@ -21,6 +21,7 @@ class KateAiInlineCompletionPlugin;
 
 class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QFormLayout;
 class QGroupBox;
 class QLabel;
@@ -76,6 +77,7 @@ private:
 
     void updateCredentialsUi();
     void updateContextControlsUi();
+    void updateStrategyControlsUi();
     void refreshProviderHint();
     void refreshApiKeyStatus();
     void refreshCopilotStatus();
@@ -104,6 +106,16 @@ private:
     // Prompt
     QGroupBox *m_promptBox = nullptr;
     QComboBox *m_promptTemplate = nullptr;
+
+    // Strategy
+    QGroupBox *m_strategyBox = nullptr;
+    QCheckBox *m_enableCompletionStrategy = nullptr;
+    QSpinBox *m_singleLineMaxTokens = nullptr;
+    QSpinBox *m_multilineMaxTokens = nullptr;
+    QSpinBox *m_manualMultilineMaxTokens = nullptr;
+    QSpinBox *m_afterAcceptMaxTokens = nullptr;
+    QDoubleSpinBox *m_completionTemperature = nullptr;
+    QCheckBox *m_singleLineStopAtNewline = nullptr;
 
     // Context
     QGroupBox *m_contextBox = nullptr;

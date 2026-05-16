@@ -140,6 +140,10 @@ private:
     QString m_rawSuggestionText;
     QString m_acceptedFromSuggestion;
 
+    bool m_nextRequestManualTrigger = false;
+    bool m_nextRequestAfterPartialAccept = false;
+    bool m_nextRequestAfterFullAccept = false;
+
     quint64 m_generation = 0;
     quint64 m_activeRequestId = 0;
 
