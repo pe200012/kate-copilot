@@ -8,14 +8,13 @@
 #include "context/RelatedFilesContextProvider.h"
 
 #include "context/ContextFileFilter.h"
+#include "context/ProjectContextResolver.h"
 #include "context/RelatedFilesResolver.h"
 
 #include <KTextEditor/Document>
 #include <KTextEditor/MainWindow>
 #include <KTextEditor/View>
 
-#include <QDir>
-#include <QFileInfo>
 #include <QUrl>
 #include <QtGlobal>
 
@@ -26,22 +25,6 @@ namespace KateAiInlineCompletion
 
 namespace
 {
-[[nodiscard]] QString localPathFromUri(const QString &uri)
-{
-    const QString trimmed = uri.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QUrl url(trimmed);
-    if (url.isValid() && !url.scheme().isEmpty()) {
-        return url.isLocalFile() ? QFileInfo(url.toLocalFile()).absoluteFilePath() : QString();
-    }
-
-    const QFileInfo info(trimmed);
-    return info.isAbsolute() ? info.absoluteFilePath() : QString();
-}
-
 [[nodiscard]] QString displayUriForDocument(KTextEditor::Document *doc)
 {
     if (!doc) {
@@ -53,19 +36,6 @@ namespace
     }
 
     return doc->documentName();
-}
-
-[[nodiscard]] QString relativeDisplayPath(const QString &path, const QString &projectRoot)
-{
-    const QString localPath = localPathFromUri(path);
-    if (!localPath.isEmpty() && !projectRoot.isEmpty()) {
-        const QString relative = QDir(projectRoot).relativeFilePath(localPath);
-        if (!relative.startsWith(QStringLiteral(".."))) {
-            return relative;
-        }
-    }
-
-    return QFileInfo(localPath).fileName();
 }
 
 [[nodiscard]] QString boundedOpenDocumentText(const QString &text, int maxChars)
@@ -127,7 +97,7 @@ QVector<ContextItem> RelatedFilesContextProvider::resolve(const ContextResolveRe
         return items;
     }
 
-    const QString currentPath = localPathFromUri(request.uri);
+    const QString currentPath = ProjectContextResolver::localPathFromUri(request.uri);
     if (currentPath.isEmpty()) {
         return items;
     }
@@ -182,7 +152,7 @@ QVector<ContextItem> RelatedFilesContextProvider::resolve(const ContextResolveRe
         item.id = candidate.path;
         item.importance = qBound(0, candidate.score, 100);
         item.uri = candidate.path;
-        item.name = relativeDisplayPath(candidate.path, projectRoot);
+        item.name = ProjectContextResolver::relativeDisplayPath(candidate.path, projectRoot);
         item.value = text;
         items.push_back(item);
         totalChars += text.size();
@@ -195,7 +165,7 @@ QHash<QString, QString> RelatedFilesContextProvider::openDocuments() const
 {
     QHash<QString, QString> docs;
     for (auto it = m_options.openDocuments.constBegin(); it != m_options.openDocuments.constEnd(); ++it) {
-        const QString path = localPathFromUri(it.key());
+        const QString path = ProjectContextResolver::localPathFromUri(it.key());
         const QString text = boundedOpenDocumentText(it.value(), m_options.maxCharsPerFile);
         if (!path.isEmpty() && !text.isEmpty()) {
             docs.insert(path, text);
@@ -212,7 +182,7 @@ QHash<QString, QString> RelatedFilesContextProvider::openDocuments() const
             continue;
         }
 
-        const QString path = localPathFromUri(displayUriForDocument(view->document()));
+        const QString path = ProjectContextResolver::localPathFromUri(displayUriForDocument(view->document()));
         if (path.isEmpty()) {
             continue;
         }
@@ -227,10 +197,10 @@ QHash<QString, QString> RelatedFilesContextProvider::openDocuments() const
 
 QString RelatedFilesContextProvider::currentFileText(const QString &path) const
 {
-    const QString cleanPath = localPathFromUri(path);
+    const QString cleanPath = ProjectContextResolver::localPathFromUri(path);
 
     if (m_activeView && m_activeView->document()) {
-        const QString activePath = localPathFromUri(displayUriForDocument(m_activeView->document()));
+        const QString activePath = ProjectContextResolver::localPathFromUri(displayUriForDocument(m_activeView->document()));
         if (!activePath.isEmpty() && activePath == cleanPath) {
             return documentTextPrefix(m_activeView->document(), m_options.maxCharsPerFile);
         }

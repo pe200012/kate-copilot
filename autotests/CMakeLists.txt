@@ -90,6 +90,13 @@ ecm_add_test(ContextFileFilterTest.cpp
         Qt6::Test
 )
 
+ecm_add_test(ProjectContextResolverTest.cpp
+    TEST_NAME kateaiinlinecompletion_project_context_resolver_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
 ecm_add_test(RelatedFilesResolverTest.cpp
     TEST_NAME kateaiinlinecompletion_related_files_resolver_test
     LINK_LIBRARIES
@@ -179,6 +186,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
@@ -226,6 +234,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp

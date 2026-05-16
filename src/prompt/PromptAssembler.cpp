@@ -112,7 +112,11 @@ namespace
     return item.kind == ContextItem::Kind::CodeSnippet && !hasRecentEditContent(item) && !hasRelatedFileContent(item) && !item.value.trimmed().isEmpty();
 }
 
-[[nodiscard]] bool tryAppend(QString *out, const QString &block, int budget)
+[[nodiscard]] bool appendTruncatedBlock(QString *out,
+                                        const QString &block,
+                                        int budget,
+                                        int minUsefulChars,
+                                        const QString &ellipsis = QStringLiteral("\n...\n"))
 {
     if (!out) {
         return false;
@@ -122,11 +126,19 @@ namespace
         return true;
     }
 
-    if (budget >= 0 && out->size() + block.size() > budget) {
+    if (budget < 0 || out->size() + block.size() <= budget) {
+        out->append(block);
+        return true;
+    }
+
+    const int remaining = budget - out->size();
+    const int usefulChars = qMax(0, minUsefulChars);
+    if (remaining <= ellipsis.size() || remaining - ellipsis.size() < usefulChars) {
         return false;
     }
 
-    out->append(block);
+    out->append(block.left(remaining - ellipsis.size()));
+    out->append(ellipsis);
     return true;
 }
 
@@ -170,6 +182,62 @@ namespace
     }
     return block;
 }
+
+[[nodiscard]] QVector<ContextItem> orderedRenderableCandidates(const QVector<ContextItem> &items, const PromptAssemblyOptions &options)
+{
+    QVector<ContextItem> candidates;
+    candidates.reserve(items.size());
+    for (ContextItem item : items) {
+        item.importance = qBound(0, item.importance, 100);
+        if (hasTraitContent(item) || hasRecentEditContent(item) || hasDiagnosticContent(item) || hasRelatedFileContent(item) || hasSnippetContent(item)) {
+            candidates.push_back(item);
+        }
+    }
+
+    std::stable_sort(candidates.begin(), candidates.end(), itemLess);
+
+    if (candidates.size() > options.maxContextItems) {
+        candidates.resize(options.maxContextItems);
+    }
+
+    return candidates;
+}
+
+[[nodiscard]] QString commentizedLines(const QString &comment, QString text)
+{
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    if (text.endsWith(QLatin1Char('\n'))) {
+        text.chop(1);
+    }
+
+    QString out;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        if (line.isEmpty()) {
+            out += comment + QLatin1Char('\n');
+        } else {
+            out += comment + QLatin1Char(' ') + line + QLatin1Char('\n');
+        }
+    }
+    return out;
+}
+
+[[nodiscard]] QString copilotContextTextForItem(const ContextItem &item)
+{
+    const QString path = displayPathForItem(item);
+    if (hasTraitContent(item)) {
+        return QStringLiteral("Info: %1: %2\n").arg(item.name.trimmed(), item.value.trimmed());
+    }
+    if (hasDiagnosticContent(item)) {
+        return QStringLiteral("Diagnostics: %1\n%2").arg(path, normalizedSnippet(item.value));
+    }
+    if (hasRecentEditContent(item)) {
+        return QStringLiteral("Recent edit: %1\n%2").arg(path, normalizedSnippet(item.value));
+    }
+
+    return QStringLiteral("File: %1\n%2").arg(path, normalizedSnippet(item.value));
+}
 } // namespace
 
 BuiltPrompt PromptAssembler::build(const QString &templateId,
@@ -193,20 +261,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         return {};
     }
 
-    QVector<ContextItem> candidates;
-    candidates.reserve(items.size());
-    for (ContextItem item : items) {
-        item.importance = qBound(0, item.importance, 100);
-        if (hasTraitContent(item) || hasRecentEditContent(item) || hasDiagnosticContent(item) || hasRelatedFileContent(item) || hasSnippetContent(item)) {
-            candidates.push_back(item);
-        }
-    }
-
-    std::stable_sort(candidates.begin(), candidates.end(), itemLess);
-
-    if (candidates.size() > options.maxContextItems) {
-        candidates.resize(options.maxContextItems);
-    }
+    const QVector<ContextItem> candidates = orderedRenderableCandidates(items, options);
 
     const QString comment = commentPrefixForLanguage(ctx.language);
     QString out;
@@ -223,18 +278,19 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         }
         block += comment + QLatin1Char(' ') + item.name.trimmed() + QStringLiteral(": ") + item.value.trimmed() + QLatin1Char('\n');
 
-        if (!tryAppend(&out, block, options.maxContextChars)) {
+        if (!appendTruncatedBlock(&out, block, options.maxContextChars, 40)) {
             continue;
         }
         traitHeaderWritten = true;
     }
 
     if (traitHeaderWritten) {
-        (void)tryAppend(&out, QStringLiteral("\n"), options.maxContextChars);
+        (void)appendTruncatedBlock(&out, QStringLiteral("\n"), options.maxContextChars, 1);
     }
 
     QString recentEditsBlock;
     bool recentEditWritten = false;
+    const QString recentEditsEndLine = comment + QStringLiteral(" End of recent edits\n\n");
     for (const ContextItem &item : std::as_const(candidates)) {
         if (!hasRecentEditContent(item)) {
             continue;
@@ -246,8 +302,14 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         }
         itemBlock += renderRecentEditValue(comment, item);
 
-        const QString endLine = comment + QStringLiteral(" End of recent edits\n\n");
-        if (options.maxContextChars >= 0 && out.size() + recentEditsBlock.size() + itemBlock.size() + endLine.size() > options.maxContextChars) {
+        if (options.maxContextChars >= 0 && out.size() + recentEditsBlock.size() + itemBlock.size() + recentEditsEndLine.size() > options.maxContextChars) {
+            const int itemBudget = options.maxContextChars - out.size() - recentEditsBlock.size() - recentEditsEndLine.size();
+            QString truncatedItemBlock;
+            if (appendTruncatedBlock(&truncatedItemBlock, itemBlock, itemBudget, 120)) {
+                recentEditsBlock += truncatedItemBlock;
+                recentEditWritten = true;
+                break;
+            }
             continue;
         }
 
@@ -256,8 +318,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
     }
 
     if (recentEditWritten) {
-        recentEditsBlock += comment + QStringLiteral(" End of recent edits\n\n");
-        out += recentEditsBlock;
+        out += recentEditsBlock + recentEditsEndLine;
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {
@@ -271,7 +332,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += renderDiagnosticValue(comment, item);
         block += QLatin1Char('\n');
 
-        (void)tryAppend(&out, block, options.maxContextChars);
+        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 180);
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {
@@ -285,7 +346,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += normalizedSnippet(item.value);
         block += QLatin1Char('\n');
 
-        (void)tryAppend(&out, block, options.maxContextChars);
+        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 300);
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {
@@ -299,10 +360,45 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += normalizedSnippet(item.value);
         block += QLatin1Char('\n');
 
-        (void)tryAppend(&out, block, options.maxContextChars);
+        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 300);
     }
 
     return out;
+}
+
+QString PromptAssembler::renderCopilotContextPrefix(const PromptContext &ctx,
+                                                    const QVector<ContextItem> &items,
+                                                    const PromptAssemblyOptions &options)
+{
+    if (!options.enabled || options.maxContextItems <= 0 || options.maxContextChars <= 0 || items.isEmpty()) {
+        return {};
+    }
+
+    const QVector<ContextItem> candidates = orderedRenderableCandidates(items, options);
+    if (candidates.isEmpty()) {
+        return {};
+    }
+
+    const QString comment = commentPrefixForLanguage(ctx.language);
+    const QString begin = comment + QStringLiteral(" BEGIN RELATED CONTEXT\n");
+    const QString end = comment + QStringLiteral(" END RELATED CONTEXT\n");
+    if (begin.size() + end.size() > options.maxContextChars) {
+        return {};
+    }
+
+    QString body;
+    const int bodyBudget = options.maxContextChars - begin.size() - end.size();
+    const QString ellipsis = QStringLiteral("\n") + comment + QStringLiteral(" ...\n");
+    for (const ContextItem &item : std::as_const(candidates)) {
+        const QString block = commentizedLines(comment, copilotContextTextForItem(item));
+        (void)appendTruncatedBlock(&body, block, bodyBudget, 120, ellipsis);
+    }
+
+    if (body.trimmed().isEmpty()) {
+        return {};
+    }
+
+    return begin + body + end;
 }
 
 } // namespace KateAiInlineCompletion

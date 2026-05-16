@@ -8,12 +8,10 @@
 #include "context/DiagnosticsContextProvider.h"
 
 #include "context/DiagnosticStore.h"
+#include "context/ProjectContextResolver.h"
 
 #include <algorithm>
 
-#include <QDir>
-#include <QFileInfo>
-#include <QUrl>
 #include <QtGlobal>
 
 namespace KateAiInlineCompletion
@@ -30,67 +28,20 @@ struct RankedDiagnostic {
 
 [[nodiscard]] QString localPathFromUri(const QString &uri)
 {
-    const QString trimmed = uri.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QUrl url(trimmed);
-    if (url.isValid() && url.isLocalFile()) {
-        return url.toLocalFile();
-    }
-
-    const QFileInfo info(trimmed);
-    if (info.exists() || info.isAbsolute()) {
-        return info.absoluteFilePath();
-    }
-
-    return {};
-}
-
-[[nodiscard]] QString directoryForPath(const QString &path)
-{
-    const QFileInfo info(path);
-    if (info.isDir()) {
-        return info.absoluteFilePath();
-    }
-    return info.absoluteDir().absolutePath();
+    return ProjectContextResolver::localPathFromUri(uri);
 }
 
 [[nodiscard]] QString findProjectRoot(const QString &localPath)
 {
-    if (localPath.trimmed().isEmpty()) {
-        return {};
-    }
-
-    QDir dir(directoryForPath(localPath));
-    QString markerRoot;
-
-    while (true) {
-        if (dir.exists(QStringLiteral(".git"))) {
-            return dir.absolutePath();
-        }
-
-        if (markerRoot.isEmpty()
-            && (dir.exists(QStringLiteral("CMakeLists.txt")) || dir.exists(QStringLiteral("package.json"))
-                || dir.exists(QStringLiteral("pyproject.toml")) || dir.exists(QStringLiteral("Cargo.toml")))) {
-            markerRoot = dir.absolutePath();
-        }
-
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-
-    return markerRoot;
+    return ProjectContextResolver::findProjectRoot(localPath);
 }
 
 [[nodiscard]] bool sameUri(const QString &a, const QString &b)
 {
-    const QString localA = localPathFromUri(a);
-    const QString localB = localPathFromUri(b);
+    const QString localA = ProjectContextResolver::canonicalPath(a);
+    const QString localB = ProjectContextResolver::canonicalPath(b);
     if (!localA.isEmpty() && !localB.isEmpty()) {
-        return QFileInfo(localA).absoluteFilePath() == QFileInfo(localB).absoluteFilePath();
+        return localA == localB;
     }
 
     return a.trimmed() == b.trimmed();
@@ -188,19 +139,7 @@ struct RankedDiagnostic {
 
 [[nodiscard]] QString relativeDisplayPath(const QString &uri, const QString &projectRoot)
 {
-    const QString localPath = localPathFromUri(uri);
-    if (!localPath.isEmpty() && !projectRoot.isEmpty()) {
-        const QString relative = QDir(projectRoot).relativeFilePath(localPath);
-        if (!relative.startsWith(QStringLiteral(".."))) {
-            return relative;
-        }
-    }
-
-    if (!localPath.isEmpty()) {
-        return QFileInfo(localPath).fileName();
-    }
-
-    return uri.trimmed();
+    return ProjectContextResolver::relativeDisplayPath(uri, projectRoot);
 }
 
 [[nodiscard]] QString diagnosticLine(const DiagnosticItem &diagnostic)

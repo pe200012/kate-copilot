@@ -8,12 +8,12 @@
 #include "context/RelatedFilesResolver.h"
 
 #include "context/ContextFileFilter.h"
+#include "context/ProjectContextResolver.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
-#include <QUrl>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -23,47 +23,6 @@ namespace KateAiInlineCompletion
 
 namespace
 {
-[[nodiscard]] QString absoluteCleanPath(const QString &path)
-{
-    if (path.trimmed().isEmpty()) {
-        return {};
-    }
-
-    const QFileInfo info(QDir::cleanPath(QDir::fromNativeSeparators(path)));
-    if (!info.isAbsolute()) {
-        return {};
-    }
-    return info.absoluteFilePath();
-}
-
-[[nodiscard]] QString localPathFromMaybeUri(const QString &path)
-{
-    const QString trimmed = path.trimmed();
-    const QUrl url(trimmed);
-    if (url.isValid() && !url.scheme().isEmpty()) {
-        return url.isLocalFile() ? absoluteCleanPath(url.toLocalFile()) : QString();
-    }
-    return absoluteCleanPath(trimmed);
-}
-
-[[nodiscard]] QString canonicalOrAbsolutePath(const QString &path)
-{
-    const QFileInfo info(path);
-    const QString canonical = info.canonicalFilePath();
-    return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
-}
-
-[[nodiscard]] bool isWithinRoot(const QString &path, const QString &root)
-{
-    if (path.isEmpty() || root.isEmpty()) {
-        return true;
-    }
-
-    const QString cleanPath = QDir::cleanPath(canonicalOrAbsolutePath(path));
-    const QString cleanRoot = QDir::cleanPath(canonicalOrAbsolutePath(root));
-    return cleanPath == cleanRoot || cleanPath.startsWith(cleanRoot + QLatin1Char('/'));
-}
-
 [[nodiscard]] QString lowerSuffix(const QFileInfo &info)
 {
     return info.suffix().toLower();
@@ -79,23 +38,11 @@ namespace
     return info.completeBaseName();
 }
 
-[[nodiscard]] bool hasCabalFile(const QDir &dir)
-{
-    return !dir.entryList(QStringList{QStringLiteral("*.cabal")}, QDir::Files, QDir::Name).isEmpty();
-}
-
-[[nodiscard]] bool hasAnyProjectMarker(const QDir &dir)
-{
-    return dir.exists(QStringLiteral(".git")) || dir.exists(QStringLiteral("CMakeLists.txt")) || dir.exists(QStringLiteral("package.json"))
-        || dir.exists(QStringLiteral("package.yaml")) || dir.exists(QStringLiteral("pyproject.toml")) || dir.exists(QStringLiteral("Cargo.toml"))
-        || dir.exists(QStringLiteral("cabal.project")) || dir.exists(QStringLiteral("stack.yaml")) || hasCabalFile(dir);
-}
-
 [[nodiscard]] QHash<QString, QString> normalizedOpenDocuments(const QHash<QString, QString> &docs)
 {
     QHash<QString, QString> out;
     for (auto it = docs.constBegin(); it != docs.constEnd(); ++it) {
-        const QString path = localPathFromMaybeUri(it.key());
+        const QString path = ProjectContextResolver::localPathFromUri(it.key());
         if (!path.isEmpty()) {
             out.insert(path, it.value());
         }
@@ -114,12 +61,12 @@ struct CandidateAccumulator {
 
     void add(const QString &path, int score)
     {
-        const QString clean = localPathFromMaybeUri(path);
+        const QString clean = ProjectContextResolver::localPathFromUri(path);
         if (clean.isEmpty() || clean == current.absoluteFilePath() || seen.contains(clean)) {
             return;
         }
 
-        if (!isWithinRoot(clean, projectRoot)) {
+        if (!ProjectContextResolver::isWithinRoot(clean, projectRoot)) {
             return;
         }
 
@@ -324,7 +271,7 @@ struct HaskellSourceRoot {
     QVector<HaskellSourceRoot> out;
     QSet<QString> seen;
     for (const HaskellSourceRoot &root : paths) {
-        const QString clean = absoluteCleanPath(root.path);
+        const QString clean = ProjectContextResolver::localPathFromUri(root.path);
         if (clean.isEmpty() || seen.contains(clean) || !QFileInfo(clean).isDir()) {
             continue;
         }
@@ -544,30 +491,12 @@ void addGenericCompanions(CandidateAccumulator *acc)
 
 QString RelatedFilesResolver::findProjectRoot(const QString &path)
 {
-    const QString clean = localPathFromMaybeUri(path);
-    if (clean.isEmpty()) {
-        return {};
-    }
-
-    QDir dir(QFileInfo(clean).isDir() ? clean : QFileInfo(clean).absolutePath());
-    QString markerRoot;
-    while (true) {
-        if (dir.exists(QStringLiteral(".git"))) {
-            return dir.absolutePath();
-        }
-        if (markerRoot.isEmpty() && hasAnyProjectMarker(dir)) {
-            markerRoot = dir.absolutePath();
-        }
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-    return markerRoot;
+    return ProjectContextResolver::findProjectRoot(path);
 }
 
 QVector<RelatedFileCandidate> RelatedFilesResolver::resolve(const RelatedFilesResolveRequest &request)
 {
-    const QString currentPath = localPathFromMaybeUri(request.currentFilePath);
+    const QString currentPath = ProjectContextResolver::localPathFromUri(request.currentFilePath);
     if (currentPath.isEmpty()) {
         return {};
     }
@@ -582,7 +511,7 @@ QVector<RelatedFileCandidate> RelatedFilesResolver::resolve(const RelatedFilesRe
     acc.openDocs = normalizedOpenDocuments(request.openDocuments);
     acc.preferOpenTabs = request.preferOpenTabs;
 
-    QString projectRoot = request.projectRoot.trimmed().isEmpty() ? findProjectRoot(currentPath) : localPathFromMaybeUri(request.projectRoot);
+    QString projectRoot = request.projectRoot.trimmed().isEmpty() ? findProjectRoot(currentPath) : ProjectContextResolver::localPathFromUri(request.projectRoot);
     if (projectRoot.isEmpty()) {
         projectRoot = acc.current.absolutePath();
     }

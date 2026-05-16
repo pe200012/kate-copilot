@@ -70,6 +70,11 @@ private Q_SLOTS:
     void recentEditsRenderAsEditPatternBlock();
     void diagnosticsRenderAsCommentBlock();
     void relatedFilesRenderWithSpecificHeader();
+    void oversizedRelatedFileBlockKeepsTruncatedUsefulPrefix();
+    void copilotContextPrefixUsesCommentBoundaries();
+    void recentEditsKeepFittingFirstEditAndEndMarkerUnderTightBudget();
+    void truncatedRecentEditsKeepEndMarker();
+    void recentEditsSkipUntruncatableLargeEditAndKeepLaterFittingEdit();
     void budgetDropsLowerImportanceItemsFirst();
     void disabledContextKeepsFimPromptValid();
 };
@@ -166,6 +171,108 @@ void PromptAssemblerTest::relatedFilesRenderWithSpecificHeader()
 
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Compare this related file from src/foo.h:")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("class Foo {};")));
+}
+
+void PromptAssemblerTest::oversizedRelatedFileBlockKeepsTruncatedUsefulPrefix()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 420;
+
+    const QString body = QStringLiteral("class Foo {\n") + QString(520, QLatin1Char('x')) + QStringLiteral("\n};\nTAIL_MARKER\n");
+    ContextItem item = snippet(QStringLiteral("src/foo.h"), body, 90);
+    item.providerId = QStringLiteral("related-files");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{item},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Compare this related file from src/foo.h:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("class Foo")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("...")));
+    QVERIFY(!prompt.userPrompt.contains(QStringLiteral("TAIL_MARKER")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("<|fim_prefix|>")));
+}
+
+void PromptAssemblerTest::copilotContextPrefixUsesCommentBoundaries()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 2000;
+
+    ContextItem item = snippet(QStringLiteral("src/foo.h"), QStringLiteral("class Foo {\npublic:\n    void run();\n};\n"), 90);
+    item.providerId = QStringLiteral("related-files");
+
+    const QString prefix = PromptAssembler::renderCopilotContextPrefix(baseContext(), QVector<ContextItem>{item}, options);
+
+    QVERIFY(prefix.startsWith(QStringLiteral("// BEGIN RELATED CONTEXT\n")));
+    QVERIFY(prefix.contains(QStringLiteral("// File: src/foo.h\n")));
+    QVERIFY(prefix.contains(QStringLiteral("// class Foo {\n")));
+    QVERIFY(prefix.contains(QStringLiteral("// public:\n")));
+    QVERIFY(prefix.contains(QStringLiteral("// END RELATED CONTEXT\n")));
+    QVERIFY(!prefix.contains(QStringLiteral("\nclass Foo")));
+}
+
+void PromptAssemblerTest::recentEditsKeepFittingFirstEditAndEndMarkerUnderTightBudget()
+{
+    PromptAssemblyOptions options;
+    options.maxContextItems = 3;
+    options.maxContextChars = 230;
+
+    ContextItem first = snippet(QStringLiteral("src/first.cpp"), QStringLiteral("File: src/first.cpp\n@@ lines 1-1\n- oldName();\n+ newName();"), 95);
+    first.providerId = QStringLiteral("recent-edits");
+    ContextItem second = snippet(QStringLiteral("src/second.cpp"), QStringLiteral("File: src/second.cpp\n@@ lines 2-20\n") + QString(500, QLatin1Char('x')), 94);
+    second.providerId = QStringLiteral("recent-edits");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{first, second},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("src/first.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("+ newName();")));
+    QVERIFY(!prompt.userPrompt.contains(QStringLiteral("src/second.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// End of recent edits")));
+}
+
+void PromptAssemblerTest::truncatedRecentEditsKeepEndMarker()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 420;
+
+    ContextItem item = snippet(QStringLiteral("src/large.cpp"), QStringLiteral("File: src/large.cpp\n@@ lines 1-60\n") + QString(900, QLatin1Char('x')), 95);
+    item.providerId = QStringLiteral("recent-edits");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{item},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("src/large.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("...")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// End of recent edits")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("<|fim_prefix|>")));
+}
+
+void PromptAssemblerTest::recentEditsSkipUntruncatableLargeEditAndKeepLaterFittingEdit()
+{
+    PromptAssemblyOptions options;
+    options.maxContextItems = 3;
+    options.maxContextChars = 145;
+
+    ContextItem large = snippet(QStringLiteral("src/large.cpp"), QStringLiteral("File: src/large.cpp\n@@ lines 1-80\n") + QString(900, QLatin1Char('x')), 95);
+    large.providerId = QStringLiteral("recent-edits");
+    ContextItem small = snippet(QStringLiteral("src/small.cpp"), QStringLiteral("File: src/small.cpp\n@@ lines 4-4\n+ ok();"), 94);
+    small.providerId = QStringLiteral("recent-edits");
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{large, small},
+                                                      options);
+
+    QVERIFY(!prompt.userPrompt.contains(QStringLiteral("src/large.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("src/small.cpp")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("+ ok();")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// End of recent edits")));
 }
 
 void PromptAssemblerTest::budgetDropsLowerImportanceItemsFirst()

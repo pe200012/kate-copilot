@@ -7,12 +7,12 @@
 
 #include "context/OpenTabsContextProvider.h"
 
+#include "context/ProjectContextResolver.h"
+
 #include <KTextEditor/Document>
 #include <KTextEditor/MainWindow>
 #include <KTextEditor/View>
 
-#include <QDir>
-#include <QFileInfo>
 #include <QUrl>
 
 namespace KateAiInlineCompletion
@@ -24,26 +24,6 @@ constexpr int kMaxFiles = 3;
 constexpr int kMaxDocumentChars = 50000;
 constexpr int kMaxSnippetChars = 1200;
 constexpr int kMaxTotalSnippetChars = 3000;
-
-[[nodiscard]] QString localPathFromUri(const QString &uri)
-{
-    const QString trimmed = uri.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QUrl url(trimmed);
-    if (url.isValid() && url.isLocalFile()) {
-        return url.toLocalFile();
-    }
-
-    const QFileInfo info(trimmed);
-    if (info.exists() || info.isAbsolute()) {
-        return info.absoluteFilePath();
-    }
-
-    return {};
-}
 
 [[nodiscard]] QString displayUriForDocument(KTextEditor::Document *doc)
 {
@@ -58,66 +38,12 @@ constexpr int kMaxTotalSnippetChars = 3000;
     return doc->documentName();
 }
 
-[[nodiscard]] QString directoryForPath(const QString &path)
-{
-    const QFileInfo info(path);
-    if (info.isDir()) {
-        return info.absoluteFilePath();
-    }
-    return info.absoluteDir().absolutePath();
-}
-
-[[nodiscard]] QString findProjectRoot(const QString &localPath)
-{
-    if (localPath.trimmed().isEmpty()) {
-        return {};
-    }
-
-    QDir dir(directoryForPath(localPath));
-    QString markerRoot;
-
-    while (true) {
-        if (dir.exists(QStringLiteral(".git"))) {
-            return dir.absolutePath();
-        }
-
-        if (markerRoot.isEmpty()
-            && (dir.exists(QStringLiteral("CMakeLists.txt")) || dir.exists(QStringLiteral("package.json"))
-                || dir.exists(QStringLiteral("pyproject.toml")) || dir.exists(QStringLiteral("Cargo.toml")))) {
-            markerRoot = dir.absolutePath();
-        }
-
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-
-    return markerRoot;
-}
-
 [[nodiscard]] bool isPrivateLookingPath(const QString &path)
 {
     const QString p = path.toLower();
     return p.contains(QStringLiteral("/.env")) || p.endsWith(QStringLiteral(".env")) || p.contains(QStringLiteral("secret"))
         || p.contains(QStringLiteral("token")) || p.contains(QStringLiteral("credential")) || p.contains(QStringLiteral("password"))
         || p.contains(QStringLiteral("private"));
-}
-
-[[nodiscard]] QString relativeDisplayPath(const QString &uri, const QString &projectRoot)
-{
-    const QString localPath = localPathFromUri(uri);
-    if (!localPath.isEmpty() && !projectRoot.isEmpty()) {
-        const QString relative = QDir(projectRoot).relativeFilePath(localPath);
-        if (!relative.startsWith(QStringLiteral(".."))) {
-            return relative;
-        }
-    }
-
-    if (!localPath.isEmpty()) {
-        return QFileInfo(localPath).fileName();
-    }
-
-    return uri;
 }
 
 [[nodiscard]] ContextItem snippetItem(const QString &providerId,
@@ -163,8 +89,8 @@ QVector<ContextItem> OpenTabsContextProvider::resolve(const ContextResolveReques
     }
 
     const QString currentUri = request.uri.trimmed();
-    const QString currentLocalPath = localPathFromUri(currentUri);
-    const QString projectRoot = findProjectRoot(currentLocalPath);
+    const QString currentLocalPath = ProjectContextResolver::localPathFromUri(currentUri);
+    const QString projectRoot = ProjectContextResolver::findProjectRoot(currentLocalPath);
     const QString requestedLanguage = request.languageId.trimmed();
 
     int acceptedFiles = 0;
@@ -182,8 +108,8 @@ QVector<ContextItem> OpenTabsContextProvider::resolve(const ContextResolveReques
         }
 
         const QString uri = displayUriForDocument(doc);
-        const QString localPath = localPathFromUri(uri);
-        if ((!currentLocalPath.isEmpty() && QFileInfo(localPath).absoluteFilePath() == QFileInfo(currentLocalPath).absoluteFilePath())
+        const QString localPath = ProjectContextResolver::localPathFromUri(uri);
+        if ((!currentLocalPath.isEmpty() && ProjectContextResolver::canonicalPath(localPath) == ProjectContextResolver::canonicalPath(currentLocalPath))
             || (!currentUri.isEmpty() && uri == currentUri)) {
             continue;
         }
@@ -210,7 +136,7 @@ QVector<ContextItem> OpenTabsContextProvider::resolve(const ContextResolveReques
             break;
         }
 
-        const QString path = relativeDisplayPath(uri, projectRoot);
+        const QString path = ProjectContextResolver::relativeDisplayPath(uri, projectRoot);
         items.push_back(snippetItem(id(), uri, path, snippet, 60 - acceptedFiles));
 
         totalChars += snippet.size();

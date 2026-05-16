@@ -54,9 +54,25 @@ public:
                 m_sockets.append(socket);
                 connect(socket, &QTcpSocket::readyRead, this, [this, socket] {
                     m_requestBuffer[socket] += socket->readAll();
-                    if (!m_requestBuffer[socket].contains("\r\n\r\n")) {
+                    const int headerEnd = m_requestBuffer[socket].indexOf("\r\n\r\n");
+                    if (headerEnd < 0) {
                         return;
                     }
+
+                    const QByteArray header = m_requestBuffer[socket].left(headerEnd);
+                    const QList<QByteArray> headerLines = header.split('\n');
+                    int contentLength = 0;
+                    for (QByteArray line : headerLines) {
+                        line = line.trimmed();
+                        if (line.toLower().startsWith("content-length:")) {
+                            contentLength = line.mid(QByteArray("content-length:").size()).trimmed().toInt();
+                        }
+                    }
+                    if (m_requestBuffer[socket].size() < headerEnd + 4 + contentLength) {
+                        return;
+                    }
+
+                    m_lastRequestBody = m_requestBuffer[socket].mid(headerEnd + 4, contentLength);
 
                     ++m_requestCount;
                     socket->write("HTTP/1.1 200 OK\r\n");
@@ -124,10 +140,16 @@ public:
         return m_requestCount;
     }
 
+    QByteArray lastRequestBody() const
+    {
+        return m_lastRequestBody;
+    }
+
 private:
     QTcpServer m_server;
     QList<QPointer<QTcpSocket>> m_sockets;
     QHash<QTcpSocket *, QByteArray> m_requestBuffer;
+    QByteArray m_lastRequestBody;
     QList<QByteArray> m_frames;
     int m_requestCount = 0;
 };
@@ -208,6 +230,7 @@ private Q_SLOTS:
     void tracksAnchorThroughDocumentEdits();
     void ctrlRightAcceptsNextWord();
     void ctrlAltRightAcceptsNextLine();
+    void promptContextSlotsExcludeCurrentFileMetadataTraits();
     void tabAcceptsStreamedSuggestion();
     void tabAcceptsSuggestionWithRestOfLineOverlap();
     void escapeClearsStreamedSuggestion();
@@ -303,6 +326,23 @@ void EditorSessionIntegrationTest::ctrlAltRightAcceptsNextLine()
 
     harness.session->acceptFullSuggestion();
     QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixhello\nworldSUFFIX")), 2000);
+}
+
+void EditorSessionIntegrationTest::promptContextSlotsExcludeCurrentFileMetadataTraits()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost()"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+
+    const QByteArray body = server.lastRequestBody();
+    QVERIFY(!body.isEmpty());
+    QVERIFY(!body.contains("file_path:"));
+    QVERIFY(!body.contains("language:"));
+    QVERIFY(!body.contains("cursor_line:"));
+    QVERIFY(!body.contains("cursor_column:"));
 }
 
 void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()

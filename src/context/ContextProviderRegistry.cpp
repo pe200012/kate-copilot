@@ -7,9 +7,12 @@
 
 #include "context/ContextProviderRegistry.h"
 
+#include "context/ProjectContextResolver.h"
+
 #include <algorithm>
 #include <utility>
 
+#include <QHash>
 #include <QtGlobal>
 
 namespace KateAiInlineCompletion
@@ -47,6 +50,77 @@ struct RankedItem {
     }
 
     return a.itemOrder < b.itemOrder;
+}
+
+[[nodiscard]] bool isSnippetDedupCandidate(const ContextItem &item)
+{
+    return item.kind == ContextItem::Kind::CodeSnippet && item.providerId != QStringLiteral("recent-edits") && !item.value.trimmed().isEmpty();
+}
+
+[[nodiscard]] QString snippetDedupKey(const ContextItem &item)
+{
+    if (!isSnippetDedupCandidate(item)) {
+        return {};
+    }
+
+    const QString fromUri = ProjectContextResolver::canonicalPath(item.uri);
+    if (!fromUri.isEmpty()) {
+        return fromUri;
+    }
+
+    return ProjectContextResolver::canonicalPath(item.id);
+}
+
+[[nodiscard]] int snippetProviderPriority(const QString &providerId)
+{
+    if (providerId == QStringLiteral("related-files")) {
+        return 0;
+    }
+    if (providerId == QStringLiteral("open-tabs")) {
+        return 1;
+    }
+    return 2;
+}
+
+[[nodiscard]] bool snippetReplacementBetter(const RankedItem &candidate, const RankedItem &current)
+{
+    const int candidatePriority = snippetProviderPriority(candidate.item.providerId);
+    const int currentPriority = snippetProviderPriority(current.item.providerId);
+    if (candidatePriority != currentPriority) {
+        return candidatePriority < currentPriority;
+    }
+
+    return rankedItemLess(candidate, current);
+}
+
+[[nodiscard]] QVector<RankedItem> deduplicatedSnippetItems(const QVector<RankedItem> &ranked)
+{
+    QVector<RankedItem> out;
+    out.reserve(ranked.size());
+
+    QHash<QString, int> indexByPath;
+    for (const RankedItem &entry : ranked) {
+        const QString key = snippetDedupKey(entry.item);
+        if (key.isEmpty()) {
+            out.push_back(entry);
+            continue;
+        }
+
+        const auto existing = indexByPath.constFind(key);
+        if (existing == indexByPath.constEnd()) {
+            indexByPath.insert(key, out.size());
+            out.push_back(entry);
+            continue;
+        }
+
+        const int index = existing.value();
+        if (index >= 0 && index < out.size() && snippetReplacementBetter(entry, out.at(index))) {
+            out[index] = entry;
+        }
+    }
+
+    std::stable_sort(out.begin(), out.end(), rankedItemLess);
+    return out;
 }
 } // namespace
 
@@ -97,9 +171,11 @@ QVector<ContextItem> ContextProviderRegistry::resolve(const ContextResolveReques
 
     std::stable_sort(ranked.begin(), ranked.end(), rankedItemLess);
 
+    const QVector<RankedItem> deduped = deduplicatedSnippetItems(ranked);
+
     QVector<ContextItem> out;
-    out.reserve(qMin(maxItems, ranked.size()));
-    for (const RankedItem &entry : std::as_const(ranked)) {
+    out.reserve(qMin(maxItems, deduped.size()));
+    for (const RankedItem &entry : std::as_const(deduped)) {
         if (out.size() >= maxItems) {
             break;
         }

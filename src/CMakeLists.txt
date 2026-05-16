@@ -59,6 +59,7 @@ add_library(kateaiinlinecompletion_context STATIC)
 target_sources(kateaiinlinecompletion_context
     PRIVATE
         context/ContextProviderRegistry.cpp
+        context/ProjectContextResolver.cpp
         context/CurrentFileContextProvider.cpp
         context/ProjectTraitsContextProvider.cpp
         context/OpenTabsContextProvider.cpp
@@ -167,6 +168,7 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         context/ContextItem.h
         context/ContextProvider.h
         context/ContextProviderRegistry.h
+        context/ProjectContextResolver.h
         context/CurrentFileContextProvider.h
         context/ProjectTraitsContextProvider.h
         context/OpenTabsContextProvider.h

@@ -7,12 +7,12 @@
 
 #include "context/ProjectTraitsContextProvider.h"
 
+#include "context/ProjectContextResolver.h"
+
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QSet>
 #include <QTextStream>
-#include <QUrl>
 
 namespace KateAiInlineCompletion
 {
@@ -23,78 +23,12 @@ constexpr qsizetype kMaxMarkerReadBytes = 64 * 1024;
 
 [[nodiscard]] QString localPathFromUri(const QString &uri)
 {
-    const QString trimmed = uri.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    const QUrl url(trimmed);
-    if (url.isValid() && url.isLocalFile()) {
-        return url.toLocalFile();
-    }
-
-    const QFileInfo info(trimmed);
-    if (info.exists() || info.isAbsolute()) {
-        return info.absoluteFilePath();
-    }
-
-    return {};
-}
-
-[[nodiscard]] QString directoryForPath(const QString &path)
-{
-    const QFileInfo info(path);
-    if (!info.exists()) {
-        return info.absoluteDir().absolutePath();
-    }
-    if (info.isDir()) {
-        return info.absoluteFilePath();
-    }
-    return info.absoluteDir().absolutePath();
-}
-
-[[nodiscard]] bool hasAnyMarker(const QDir &dir)
-{
-    static const QStringList markers = {
-        QStringLiteral("CMakeLists.txt"),
-        QStringLiteral("package.json"),
-        QStringLiteral("pyproject.toml"),
-        QStringLiteral("Cargo.toml"),
-    };
-
-    for (const QString &marker : markers) {
-        if (dir.exists(marker)) {
-            return true;
-        }
-    }
-
-    return false;
+    return ProjectContextResolver::localPathFromUri(uri);
 }
 
 [[nodiscard]] QString findProjectRoot(const QString &localPath)
 {
-    if (localPath.trimmed().isEmpty()) {
-        return {};
-    }
-
-    QDir dir(directoryForPath(localPath));
-    QString markerRoot;
-
-    while (true) {
-        if (dir.exists(QStringLiteral(".git"))) {
-            return dir.absolutePath();
-        }
-
-        if (markerRoot.isEmpty() && hasAnyMarker(dir)) {
-            markerRoot = dir.absolutePath();
-        }
-
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-
-    return markerRoot;
+    return ProjectContextResolver::findProjectRoot(localPath);
 }
 
 [[nodiscard]] QString readSmallTextFile(const QString &path)

@@ -7,6 +7,9 @@
 
 #include "context/ContextProviderRegistry.h"
 
+#include <QFile>
+#include <QTemporaryDir>
+#include <QUrl>
 #include <QtTest>
 
 #include <memory>
@@ -64,6 +67,26 @@ ContextItem trait(QString providerId, QString id, int importance)
     return item;
 }
 
+ContextItem snippet(QString providerId, QString uri, QString value, int importance)
+{
+    ContextItem item;
+    item.kind = ContextItem::Kind::CodeSnippet;
+    item.providerId = std::move(providerId);
+    item.id = uri;
+    item.uri = std::move(uri);
+    item.name = item.uri;
+    item.value = std::move(value);
+    item.importance = importance;
+    return item;
+}
+
+void writeText(const QString &path, const QString &text)
+{
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    file.write(text.toUtf8());
+}
+
 } // namespace
 
 class ContextProviderRegistryTest : public QObject
@@ -74,6 +97,7 @@ private Q_SLOTS:
     void resolvesItemsByProviderScoreAndImportance();
     void ignoresNonMatchingProviders();
     void fillsMissingProviderId();
+    void deduplicatesSnippetItemsByCanonicalPathKeepingRelatedFileSemantics();
 };
 
 void ContextProviderRegistryTest::resolvesItemsByProviderScoreAndImportance()
@@ -123,6 +147,35 @@ void ContextProviderRegistryTest::fillsMissingProviderId()
 
     QCOMPARE(items.size(), 1);
     QCOMPARE(items.constFirst().providerId, QStringLiteral("current-file"));
+}
+
+void ContextProviderRegistryTest::deduplicatesSnippetItemsByCanonicalPathKeepingRelatedFileSemantics()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString header = dir.filePath(QStringLiteral("Foo.h"));
+    writeText(header, QStringLiteral("class Foo {};\n"));
+
+    ContextProviderRegistry registry;
+    registry.addProvider(std::make_unique<FakeProvider>(QStringLiteral("open-tabs"),
+                                                        95,
+                                                        QVector<ContextItem>{snippet(QStringLiteral("open-tabs"),
+                                                                                     QUrl::fromLocalFile(header).toString(),
+                                                                                     QStringLiteral("class FooFromOpenTab {};\n"),
+                                                                                     95)}));
+    registry.addProvider(std::make_unique<FakeProvider>(QStringLiteral("related-files"),
+                                                        80,
+                                                        QVector<ContextItem>{snippet(QStringLiteral("related-files"),
+                                                                                     header,
+                                                                                     QStringLiteral("class FooFromRelatedFile {};\n"),
+                                                                                     80)}));
+
+    const QVector<ContextItem> items = registry.resolve(ContextResolveRequest{}, 6);
+
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items.constFirst().providerId, QStringLiteral("related-files"));
+    QVERIFY(items.constFirst().value.contains(QStringLiteral("FooFromRelatedFile")));
 }
 
 QTEST_MAIN(ContextProviderRegistryTest)

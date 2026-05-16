@@ -9,7 +9,6 @@
 
 #include "auth/CopilotAuthManager.h"
 #include "context/ContextProviderRegistry.h"
-#include "context/CurrentFileContextProvider.h"
 #include "context/DiagnosticsContextProvider.h"
 #include "context/DiagnosticStore.h"
 #include "context/OpenTabsContextProvider.h"
@@ -136,7 +135,6 @@ static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *vie
     contextRequest.timeBudgetMs = 120;
 
     ContextProviderRegistry registry;
-    registry.addProvider(std::make_unique<CurrentFileContextProvider>());
     registry.addProvider(std::make_unique<ProjectTraitsContextProvider>());
     if (settings.enableRecentEditsContext && recentEditsTracker) {
         registry.addProvider(std::make_unique<RecentEditsContextProvider>(recentEditsTracker, recentEditsContextOptionsFromSettings(settings)));
@@ -589,7 +587,7 @@ void EditorSession::startRequest()
 
     if (providerIsCopilot) {
         CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
-        built.prompt = PromptAssembler::renderContextPrefix(promptCtx, contextItems, assemblyOptions) + built.prompt;
+        built.prompt = PromptAssembler::renderCopilotContextPrefix(promptCtx, contextItems, assemblyOptions) + built.prompt;
 
         request.prompt = built.prompt;
         request.suffix = built.suffix;

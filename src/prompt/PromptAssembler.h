@@ -34,6 +34,10 @@ public:
     [[nodiscard]] static QString renderContextPrefix(const PromptContext &ctx,
                                                      const QVector<ContextItem> &items,
                                                      const PromptAssemblyOptions &options);
+
+    [[nodiscard]] static QString renderCopilotContextPrefix(const PromptContext &ctx,
+                                                            const QVector<ContextItem> &items,
+                                                            const PromptAssemblyOptions &options);
 };
 
 } // namespace KateAiInlineCompletion
