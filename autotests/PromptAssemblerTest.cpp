@@ -69,6 +69,7 @@ private Q_SLOTS:
     void codeSnippetsIncludePathHeaders();
     void recentEditsRenderAsEditPatternBlock();
     void diagnosticsRenderAsCommentBlock();
+    void relatedFilesRenderWithSpecificHeader();
     void budgetDropsLowerImportanceItemsFirst();
     void disabledContextKeepsFimPromptValid();
 };
@@ -147,6 +148,24 @@ void PromptAssemblerTest::diagnosticsRenderAsCommentBlock()
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("// 42:13 - error CLANG: use of undeclared identifier 'bar'")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("// 57:9 - warning CLANG-Wunused-variable: unused variable 'x'")));
     QVERIFY(prompt.userPrompt.indexOf(QStringLiteral("Consider these diagnostics")) < prompt.userPrompt.indexOf(QStringLiteral("<|fim_prefix|>")));
+}
+
+void PromptAssemblerTest::relatedFilesRenderWithSpecificHeader()
+{
+    PromptAssemblyOptions options;
+    options.maxContextChars = 2000;
+
+    ContextItem item = snippet(QStringLiteral("src/foo.h"), QStringLiteral("class Foo {};"));
+    item.providerId = QStringLiteral("related-files");
+    item.importance = 80;
+
+    const BuiltPrompt prompt = PromptAssembler::build(QString::fromLatin1(CompletionSettings::kPromptTemplateFimV3),
+                                                      baseContext(),
+                                                      QVector<ContextItem>{item},
+                                                      options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("// Compare this related file from src/foo.h:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("class Foo {};")));
 }
 
 void PromptAssemblerTest::budgetDropsLowerImportanceItemsFirst()

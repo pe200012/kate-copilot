@@ -199,6 +199,66 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_promptTemplate->addItem(i18n("FIM v1"), QString::fromLatin1(KateAiInlineCompletion::CompletionSettings::kPromptTemplateFimV1));
     promptForm->addRow(i18n("Template"), m_promptTemplate);
 
+    m_contextBox = new QGroupBox(i18n("Context"), this);
+    root->addWidget(m_contextBox);
+
+    auto *contextForm = new QFormLayout(m_contextBox);
+
+    m_enableContextualPrompt = new QCheckBox(i18n("Enable contextual prompt"), m_contextBox);
+    m_enableContextualPrompt->setObjectName(QStringLiteral("contextualPromptCheckBox"));
+    contextForm->addRow(m_enableContextualPrompt);
+
+    m_maxContextItems = new QSpinBox(m_contextBox);
+    m_maxContextItems->setObjectName(QStringLiteral("maxContextItemsSpinBox"));
+    m_maxContextItems->setRange(KateAiInlineCompletion::CompletionSettings::kContextItemsMin,
+                                KateAiInlineCompletion::CompletionSettings::kContextItemsMax);
+    contextForm->addRow(i18n("Max context items"), m_maxContextItems);
+
+    m_maxContextChars = new QSpinBox(m_contextBox);
+    m_maxContextChars->setObjectName(QStringLiteral("maxContextCharsSpinBox"));
+    m_maxContextChars->setRange(KateAiInlineCompletion::CompletionSettings::kContextCharsMin,
+                                KateAiInlineCompletion::CompletionSettings::kContextCharsMax);
+    contextForm->addRow(i18n("Max context characters"), m_maxContextChars);
+
+    m_enableOpenTabsContext = new QCheckBox(i18n("Enable open tabs context"), m_contextBox);
+    m_enableOpenTabsContext->setObjectName(QStringLiteral("openTabsContextCheckBox"));
+    contextForm->addRow(m_enableOpenTabsContext);
+
+    m_enableRecentEditsContext = new QCheckBox(i18n("Enable recent edits context"), m_contextBox);
+    m_enableRecentEditsContext->setObjectName(QStringLiteral("recentEditsContextCheckBox"));
+    contextForm->addRow(m_enableRecentEditsContext);
+
+    m_enableDiagnosticsContext = new QCheckBox(i18n("Enable diagnostics context"), m_contextBox);
+    m_enableDiagnosticsContext->setObjectName(QStringLiteral("diagnosticsContextCheckBox"));
+    contextForm->addRow(m_enableDiagnosticsContext);
+
+    m_enableRelatedFilesContext = new QCheckBox(i18n("Enable related files context"), m_contextBox);
+    m_enableRelatedFilesContext->setObjectName(QStringLiteral("relatedFilesContextCheckBox"));
+    contextForm->addRow(m_enableRelatedFilesContext);
+
+    m_relatedFilesMaxFiles = new QSpinBox(m_contextBox);
+    m_relatedFilesMaxFiles->setObjectName(QStringLiteral("relatedFilesMaxFilesSpinBox"));
+    m_relatedFilesMaxFiles->setRange(KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxFilesMin,
+                                     KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxFilesMax);
+    contextForm->addRow(i18n("Max related files"), m_relatedFilesMaxFiles);
+
+    m_relatedFilesMaxChars = new QSpinBox(m_contextBox);
+    m_relatedFilesMaxChars->setObjectName(QStringLiteral("relatedFilesMaxCharsSpinBox"));
+    m_relatedFilesMaxChars->setRange(KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxCharsMin,
+                                     KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxCharsMax);
+    contextForm->addRow(i18n("Max related file characters"), m_relatedFilesMaxChars);
+
+    m_relatedFilesMaxCharsPerFile = new QSpinBox(m_contextBox);
+    m_relatedFilesMaxCharsPerFile->setObjectName(QStringLiteral("relatedFilesMaxCharsPerFileSpinBox"));
+    m_relatedFilesMaxCharsPerFile->setRange(KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxCharsPerFileMin,
+                                            KateAiInlineCompletion::CompletionSettings::kRelatedFilesMaxCharsPerFileMax);
+    contextForm->addRow(i18n("Max characters per related file"), m_relatedFilesMaxCharsPerFile);
+
+    m_contextExcludePatterns = new QLineEdit(m_contextBox);
+    m_contextExcludePatterns->setObjectName(QStringLiteral("contextExcludePatternsEdit"));
+    m_contextExcludePatterns->setPlaceholderText(i18n("*.secret; generated/*"));
+    contextForm->addRow(i18n("Context exclude patterns"), m_contextExcludePatterns);
+
     auto *providerBox = new QGroupBox(i18n("Provider"), this);
     root->addWidget(providerBox);
 
@@ -321,6 +381,18 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     connect(m_copilotNwo, &QLineEdit::textChanged, this, &KateAiConfigPage::slotUiChanged);
 
     connect(m_promptTemplate, qOverload<int>(&QComboBox::currentIndexChanged), this, &KateAiConfigPage::slotUiChanged);
+
+    connect(m_enableContextualPrompt, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_maxContextItems, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_maxContextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableOpenTabsContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableRecentEditsContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableDiagnosticsContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableRelatedFilesContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_relatedFilesMaxFiles, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_relatedFilesMaxChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_relatedFilesMaxCharsPerFile, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_contextExcludePatterns, &QLineEdit::textChanged, this, &KateAiConfigPage::slotUiChanged);
 
     connect(m_apiKey, &QLineEdit::textChanged, this, &KateAiConfigPage::slotUiChanged);
     connect(m_apiKey, &QLineEdit::textChanged, this, [this](const QString &text) {
@@ -615,6 +687,18 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     const int templateIndex = indexOfData(m_promptTemplate, v.promptTemplate);
     m_promptTemplate->setCurrentIndex(templateIndex >= 0 ? templateIndex : 0);
 
+    m_enableContextualPrompt->setChecked(v.enableContextualPrompt);
+    m_maxContextItems->setValue(v.maxContextItems);
+    m_maxContextChars->setValue(v.maxContextChars);
+    m_enableOpenTabsContext->setChecked(v.enableOpenTabsContext);
+    m_enableRecentEditsContext->setChecked(v.enableRecentEditsContext);
+    m_enableDiagnosticsContext->setChecked(v.enableDiagnosticsContext);
+    m_enableRelatedFilesContext->setChecked(v.enableRelatedFilesContext);
+    m_relatedFilesMaxFiles->setValue(v.relatedFilesMaxFiles);
+    m_relatedFilesMaxChars->setValue(v.relatedFilesMaxChars);
+    m_relatedFilesMaxCharsPerFile->setValue(v.relatedFilesMaxCharsPerFile);
+    m_contextExcludePatterns->setText(v.contextExcludePatterns.join(QStringLiteral("; ")));
+
     updateCredentialsUi();
 }
 
@@ -632,6 +716,18 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.endpoint = QUrl(m_endpoint->text().trimmed());
     s.model = m_model->text().trimmed();
     s.promptTemplate = m_promptTemplate->currentData().toString();
+
+    s.enableContextualPrompt = m_enableContextualPrompt->isChecked();
+    s.maxContextItems = m_maxContextItems->value();
+    s.maxContextChars = m_maxContextChars->value();
+    s.enableOpenTabsContext = m_enableOpenTabsContext->isChecked();
+    s.enableRecentEditsContext = m_enableRecentEditsContext->isChecked();
+    s.enableDiagnosticsContext = m_enableDiagnosticsContext->isChecked();
+    s.enableRelatedFilesContext = m_enableRelatedFilesContext->isChecked();
+    s.relatedFilesMaxFiles = m_relatedFilesMaxFiles->value();
+    s.relatedFilesMaxChars = m_relatedFilesMaxChars->value();
+    s.relatedFilesMaxCharsPerFile = m_relatedFilesMaxCharsPerFile->value();
+    s.contextExcludePatterns = m_contextExcludePatterns->text().split(QLatin1Char(';'), Qt::SkipEmptyParts);
 
     s.copilotClientId = m_copilotClientId->text().trimmed();
     s.copilotNwo = m_copilotNwo->text().trimmed();

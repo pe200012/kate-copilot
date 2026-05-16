@@ -68,6 +68,18 @@ namespace
     return scheme == QStringLiteral("http") || scheme == QStringLiteral("https");
 }
 
+[[nodiscard]] QStringList normalizedPatterns(const QStringList &patterns)
+{
+    QStringList out;
+    for (const QString &pattern : patterns) {
+        const QString trimmed = pattern.trimmed();
+        if (!trimmed.isEmpty() && !out.contains(trimmed)) {
+            out.push_back(trimmed);
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 CompletionSettings CompletionSettings::defaults()
@@ -96,6 +108,12 @@ CompletionSettings CompletionSettings::validated() const
     out.diagnosticsMaxItems = qBound(kDiagnosticsMaxItemsMin, out.diagnosticsMaxItems, kDiagnosticsMaxItemsMax);
     out.diagnosticsMaxChars = qBound(kDiagnosticsMaxCharsMin, out.diagnosticsMaxChars, kDiagnosticsMaxCharsMax);
     out.diagnosticsMaxLineDistance = qBound(kDiagnosticsMaxLineDistanceMin, out.diagnosticsMaxLineDistance, kDiagnosticsMaxLineDistanceMax);
+    out.relatedFilesMaxFiles = qBound(kRelatedFilesMaxFilesMin, out.relatedFilesMaxFiles, kRelatedFilesMaxFilesMax);
+    out.relatedFilesMaxChars = qBound(kRelatedFilesMaxCharsMin, out.relatedFilesMaxChars, kRelatedFilesMaxCharsMax);
+    out.relatedFilesMaxCharsPerFile = qBound(kRelatedFilesMaxCharsPerFileMin,
+                                             out.relatedFilesMaxCharsPerFile,
+                                             kRelatedFilesMaxCharsPerFileMax);
+    out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
 
     out.provider = out.provider.trimmed().toLower();
     if (!isSupportedProvider(out.provider)) {
@@ -145,6 +163,7 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.enableContextualPrompt = group.readEntry("EnableContextualPrompt", d.enableContextualPrompt);
     out.maxContextItems = group.readEntry("MaxContextItems", d.maxContextItems);
     out.maxContextChars = group.readEntry("MaxContextChars", d.maxContextChars);
+    out.enableOpenTabsContext = group.readEntry("EnableOpenTabsContext", d.enableOpenTabsContext);
     out.enableRecentEditsContext = group.readEntry("EnableRecentEditsContext", d.enableRecentEditsContext);
     out.recentEditsMaxFiles = group.readEntry("RecentEditsMaxFiles", d.recentEditsMaxFiles);
     out.recentEditsMaxEdits = group.readEntry("RecentEditsMaxEdits", d.recentEditsMaxEdits);
@@ -161,6 +180,12 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.diagnosticsIncludeWarnings = group.readEntry("DiagnosticsIncludeWarnings", d.diagnosticsIncludeWarnings);
     out.diagnosticsIncludeInformation = group.readEntry("DiagnosticsIncludeInformation", d.diagnosticsIncludeInformation);
     out.diagnosticsIncludeHints = group.readEntry("DiagnosticsIncludeHints", d.diagnosticsIncludeHints);
+    out.enableRelatedFilesContext = group.readEntry("EnableRelatedFilesContext", d.enableRelatedFilesContext);
+    out.relatedFilesMaxFiles = group.readEntry("RelatedFilesMaxFiles", d.relatedFilesMaxFiles);
+    out.relatedFilesMaxChars = group.readEntry("RelatedFilesMaxChars", d.relatedFilesMaxChars);
+    out.relatedFilesMaxCharsPerFile = group.readEntry("RelatedFilesMaxCharsPerFile", d.relatedFilesMaxCharsPerFile);
+    out.relatedFilesPreferOpenTabs = group.readEntry("RelatedFilesPreferOpenTabs", d.relatedFilesPreferOpenTabs);
+    out.contextExcludePatterns = group.readEntry("ContextExcludePatterns", d.contextExcludePatterns);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -186,6 +211,7 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("EnableContextualPrompt", v.enableContextualPrompt);
     group.writeEntry("MaxContextItems", v.maxContextItems);
     group.writeEntry("MaxContextChars", v.maxContextChars);
+    group.writeEntry("EnableOpenTabsContext", v.enableOpenTabsContext);
     group.writeEntry("EnableRecentEditsContext", v.enableRecentEditsContext);
     group.writeEntry("RecentEditsMaxFiles", v.recentEditsMaxFiles);
     group.writeEntry("RecentEditsMaxEdits", v.recentEditsMaxEdits);
@@ -201,6 +227,12 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("DiagnosticsIncludeWarnings", v.diagnosticsIncludeWarnings);
     group.writeEntry("DiagnosticsIncludeInformation", v.diagnosticsIncludeInformation);
     group.writeEntry("DiagnosticsIncludeHints", v.diagnosticsIncludeHints);
+    group.writeEntry("EnableRelatedFilesContext", v.enableRelatedFilesContext);
+    group.writeEntry("RelatedFilesMaxFiles", v.relatedFilesMaxFiles);
+    group.writeEntry("RelatedFilesMaxChars", v.relatedFilesMaxChars);
+    group.writeEntry("RelatedFilesMaxCharsPerFile", v.relatedFilesMaxCharsPerFile);
+    group.writeEntry("RelatedFilesPreferOpenTabs", v.relatedFilesPreferOpenTabs);
+    group.writeEntry("ContextExcludePatterns", v.contextExcludePatterns);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

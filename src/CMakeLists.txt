@@ -66,6 +66,9 @@ target_sources(kateaiinlinecompletion_context
         context/RecentEditsContextProvider.cpp
         context/DiagnosticStore.cpp
         context/DiagnosticsContextProvider.cpp
+        context/ContextFileFilter.cpp
+        context/RelatedFilesResolver.cpp
+        context/RelatedFilesContextProvider.cpp
 )
 
 target_include_directories(kateaiinlinecompletion_context
@@ -173,6 +176,9 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         context/DiagnosticItem.h
         context/DiagnosticStore.h
         context/DiagnosticsContextProvider.h
+        context/ContextFileFilter.h
+        context/RelatedFilesResolver.h
+        context/RelatedFilesContextProvider.h
 
         prompt/PromptAssembler.h
 

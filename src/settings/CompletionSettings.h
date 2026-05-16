@@ -15,6 +15,7 @@
 
 #include <KConfigGroup>
 
+#include <QStringList>
 #include <QUrl>
 
 namespace KateAiInlineCompletion
@@ -55,6 +56,12 @@ struct CompletionSettings {
     static constexpr int kDiagnosticsMaxCharsMax = 30000;
     static constexpr int kDiagnosticsMaxLineDistanceMin = 0;
     static constexpr int kDiagnosticsMaxLineDistanceMax = 10000;
+    static constexpr int kRelatedFilesMaxFilesMin = 0;
+    static constexpr int kRelatedFilesMaxFilesMax = 50;
+    static constexpr int kRelatedFilesMaxCharsMin = 0;
+    static constexpr int kRelatedFilesMaxCharsMax = 50000;
+    static constexpr int kRelatedFilesMaxCharsPerFileMin = 200;
+    static constexpr int kRelatedFilesMaxCharsPerFileMax = 20000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -79,6 +86,7 @@ struct CompletionSettings {
     bool enableContextualPrompt = true;
     int maxContextItems = 6;
     int maxContextChars = 6000;
+    bool enableOpenTabsContext = true;
 
     bool enableRecentEditsContext = true;
     int recentEditsMaxFiles = 20;
@@ -96,6 +104,13 @@ struct CompletionSettings {
     bool diagnosticsIncludeWarnings = true;
     bool diagnosticsIncludeInformation = false;
     bool diagnosticsIncludeHints = false;
+
+    bool enableRelatedFilesContext = true;
+    int relatedFilesMaxFiles = 6;
+    int relatedFilesMaxChars = 12000;
+    int relatedFilesMaxCharsPerFile = 4000;
+    bool relatedFilesPreferOpenTabs = true;
+    QStringList contextExcludePatterns;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

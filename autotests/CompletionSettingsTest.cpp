@@ -54,6 +54,7 @@ void CompletionSettingsTest::defaultsAreValid()
     QCOMPARE(d.recentEditsMaxLinesPerEdit, 10);
     QCOMPARE(d.recentEditsActiveDocDistanceLimitFromCursor, 100);
 
+    QVERIFY(d.enableOpenTabsContext);
     QVERIFY(d.enableDiagnosticsContext);
     QCOMPARE(d.diagnosticsMaxItems, 8);
     QCOMPARE(d.diagnosticsMaxChars, 3000);
@@ -61,6 +62,12 @@ void CompletionSettingsTest::defaultsAreValid()
     QVERIFY(d.diagnosticsIncludeWarnings);
     QVERIFY(!d.diagnosticsIncludeInformation);
     QVERIFY(!d.diagnosticsIncludeHints);
+    QVERIFY(d.enableRelatedFilesContext);
+    QCOMPARE(d.relatedFilesMaxFiles, 6);
+    QCOMPARE(d.relatedFilesMaxChars, 12000);
+    QCOMPARE(d.relatedFilesMaxCharsPerFile, 4000);
+    QVERIFY(d.relatedFilesPreferOpenTabs);
+    QVERIFY(d.contextExcludePatterns.isEmpty());
 
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
@@ -89,6 +96,10 @@ void CompletionSettingsTest::validationClampsBounds()
     s.diagnosticsMaxItems = 999999;
     s.diagnosticsMaxChars = 999999;
     s.diagnosticsMaxLineDistance = 999999;
+    s.relatedFilesMaxFiles = 999999;
+    s.relatedFilesMaxChars = 999999;
+    s.relatedFilesMaxCharsPerFile = 999999;
+    s.contextExcludePatterns = {QStringLiteral(" *.tmp "), QString(), QStringLiteral("build/generated/*")};
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
     s.model = QString();
@@ -113,6 +124,10 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.diagnosticsMaxItems, CompletionSettings::kDiagnosticsMaxItemsMax);
     QCOMPARE(v.diagnosticsMaxChars, CompletionSettings::kDiagnosticsMaxCharsMax);
     QCOMPARE(v.diagnosticsMaxLineDistance, CompletionSettings::kDiagnosticsMaxLineDistanceMax);
+    QCOMPARE(v.relatedFilesMaxFiles, CompletionSettings::kRelatedFilesMaxFilesMax);
+    QCOMPARE(v.relatedFilesMaxChars, CompletionSettings::kRelatedFilesMaxCharsMax);
+    QCOMPARE(v.relatedFilesMaxCharsPerFile, CompletionSettings::kRelatedFilesMaxCharsPerFileMax);
+    QCOMPARE(v.contextExcludePatterns, QStringList({QStringLiteral("*.tmp"), QStringLiteral("build/generated/*")}));
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
     QVERIFY(!v.endpoint.isRelative());
@@ -153,6 +168,7 @@ void CompletionSettingsTest::roundTripConfig()
     in.enableContextualPrompt = false;
     in.maxContextItems = 3;
     in.maxContextChars = 2048;
+    in.enableOpenTabsContext = false;
     in.enableRecentEditsContext = false;
     in.recentEditsMaxFiles = 7;
     in.recentEditsMaxEdits = 5;
@@ -168,6 +184,12 @@ void CompletionSettingsTest::roundTripConfig()
     in.diagnosticsIncludeWarnings = false;
     in.diagnosticsIncludeInformation = true;
     in.diagnosticsIncludeHints = true;
+    in.enableRelatedFilesContext = false;
+    in.relatedFilesMaxFiles = 4;
+    in.relatedFilesMaxChars = 9000;
+    in.relatedFilesMaxCharsPerFile = 2500;
+    in.relatedFilesPreferOpenTabs = false;
+    in.contextExcludePatterns = {QStringLiteral("*.secret"), QStringLiteral("generated/*")};
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -187,6 +209,7 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.enableContextualPrompt, in.enableContextualPrompt);
     QCOMPARE(out.maxContextItems, in.maxContextItems);
     QCOMPARE(out.maxContextChars, in.maxContextChars);
+    QCOMPARE(out.enableOpenTabsContext, in.enableOpenTabsContext);
     QCOMPARE(out.enableRecentEditsContext, in.enableRecentEditsContext);
     QCOMPARE(out.recentEditsMaxFiles, in.recentEditsMaxFiles);
     QCOMPARE(out.recentEditsMaxEdits, in.recentEditsMaxEdits);
@@ -202,6 +225,12 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.diagnosticsIncludeWarnings, in.diagnosticsIncludeWarnings);
     QCOMPARE(out.diagnosticsIncludeInformation, in.diagnosticsIncludeInformation);
     QCOMPARE(out.diagnosticsIncludeHints, in.diagnosticsIncludeHints);
+    QCOMPARE(out.enableRelatedFilesContext, in.enableRelatedFilesContext);
+    QCOMPARE(out.relatedFilesMaxFiles, in.relatedFilesMaxFiles);
+    QCOMPARE(out.relatedFilesMaxChars, in.relatedFilesMaxChars);
+    QCOMPARE(out.relatedFilesMaxCharsPerFile, in.relatedFilesMaxCharsPerFile);
+    QCOMPARE(out.relatedFilesPreferOpenTabs, in.relatedFilesPreferOpenTabs);
+    QCOMPARE(out.contextExcludePatterns, in.contextExcludePatterns);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

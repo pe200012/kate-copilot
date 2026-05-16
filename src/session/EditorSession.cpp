@@ -16,6 +16,7 @@
 #include "context/ProjectTraitsContextProvider.h"
 #include "context/RecentEditsContextProvider.h"
 #include "context/RecentEditsTracker.h"
+#include "context/RelatedFilesContextProvider.h"
 #include "network/AbstractAIProvider.h"
 #include "network/CopilotCodexProvider.h"
 #include "network/OpenAICompatibleProvider.h"
@@ -97,6 +98,18 @@ static DiagnosticsContextOptions diagnosticsContextOptionsFromSettings(const Com
     return options;
 }
 
+static RelatedFilesContextOptions relatedFilesContextOptionsFromSettings(const CompletionSettings &settings)
+{
+    RelatedFilesContextOptions options;
+    options.enabled = settings.enableRelatedFilesContext;
+    options.maxFiles = settings.relatedFilesMaxFiles;
+    options.maxChars = settings.relatedFilesMaxChars;
+    options.maxCharsPerFile = settings.relatedFilesMaxCharsPerFile;
+    options.preferOpenTabs = settings.relatedFilesPreferOpenTabs;
+    options.excludePatterns = settings.contextExcludePatterns;
+    return options;
+}
+
 static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *view,
                                                           KTextEditor::Document *doc,
                                                           RecentEditsTracker *recentEditsTracker,
@@ -131,7 +144,12 @@ static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *vie
     if (settings.enableDiagnosticsContext && diagnosticStore) {
         registry.addProvider(std::make_unique<DiagnosticsContextProvider>(diagnosticStore, diagnosticsContextOptionsFromSettings(settings)));
     }
-    registry.addProvider(std::make_unique<OpenTabsContextProvider>(view->mainWindow(), view));
+    if (settings.enableRelatedFilesContext) {
+        registry.addProvider(std::make_unique<RelatedFilesContextProvider>(view->mainWindow(), view, relatedFilesContextOptionsFromSettings(settings)));
+    }
+    if (settings.enableOpenTabsContext) {
+        registry.addProvider(std::make_unique<OpenTabsContextProvider>(view->mainWindow(), view));
+    }
 
     return registry.resolve(contextRequest, settings.maxContextItems);
 }

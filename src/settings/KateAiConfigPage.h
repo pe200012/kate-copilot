@@ -104,6 +104,20 @@ private:
     QGroupBox *m_promptBox = nullptr;
     QComboBox *m_promptTemplate = nullptr;
 
+    // Context
+    QGroupBox *m_contextBox = nullptr;
+    QCheckBox *m_enableContextualPrompt = nullptr;
+    QSpinBox *m_maxContextItems = nullptr;
+    QSpinBox *m_maxContextChars = nullptr;
+    QCheckBox *m_enableOpenTabsContext = nullptr;
+    QCheckBox *m_enableRecentEditsContext = nullptr;
+    QCheckBox *m_enableDiagnosticsContext = nullptr;
+    QCheckBox *m_enableRelatedFilesContext = nullptr;
+    QSpinBox *m_relatedFilesMaxFiles = nullptr;
+    QSpinBox *m_relatedFilesMaxChars = nullptr;
+    QSpinBox *m_relatedFilesMaxCharsPerFile = nullptr;
+    QLineEdit *m_contextExcludePatterns = nullptr;
+
     // Provider
     QComboBox *m_provider = nullptr;
     QLabel *m_providerHint = nullptr;

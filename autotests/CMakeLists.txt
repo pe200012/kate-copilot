@@ -83,6 +83,28 @@ ecm_add_test(DiagnosticsContextProviderTest.cpp
         KF6::TextEditor
 )
 
+ecm_add_test(ContextFileFilterTest.cpp
+    TEST_NAME kateaiinlinecompletion_context_file_filter_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
+ecm_add_test(RelatedFilesResolverTest.cpp
+    TEST_NAME kateaiinlinecompletion_related_files_resolver_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+)
+
+ecm_add_test(RelatedFilesContextProviderTest.cpp
+    TEST_NAME kateaiinlinecompletion_related_files_context_provider_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+
 ecm_add_test(GhostTextInlineNoteProviderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     TEST_NAME kateaiinlinecompletion_ghost_text_inline_note_provider_test
@@ -164,6 +186,9 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextFileFilter.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesResolver.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
@@ -208,6 +233,9 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextFileFilter.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesResolver.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp

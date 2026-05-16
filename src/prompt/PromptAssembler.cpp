@@ -102,9 +102,14 @@ namespace
     return item.kind == ContextItem::Kind::DiagnosticBag && item.providerId == QStringLiteral("diagnostics") && !item.value.trimmed().isEmpty();
 }
 
+[[nodiscard]] bool hasRelatedFileContent(const ContextItem &item)
+{
+    return item.kind == ContextItem::Kind::CodeSnippet && item.providerId == QStringLiteral("related-files") && !item.value.trimmed().isEmpty();
+}
+
 [[nodiscard]] bool hasSnippetContent(const ContextItem &item)
 {
-    return item.kind == ContextItem::Kind::CodeSnippet && !hasRecentEditContent(item) && !item.value.trimmed().isEmpty();
+    return item.kind == ContextItem::Kind::CodeSnippet && !hasRecentEditContent(item) && !hasRelatedFileContent(item) && !item.value.trimmed().isEmpty();
 }
 
 [[nodiscard]] bool tryAppend(QString *out, const QString &block, int budget)
@@ -192,7 +197,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
     candidates.reserve(items.size());
     for (ContextItem item : items) {
         item.importance = qBound(0, item.importance, 100);
-        if (hasTraitContent(item) || hasRecentEditContent(item) || hasDiagnosticContent(item) || hasSnippetContent(item)) {
+        if (hasTraitContent(item) || hasRecentEditContent(item) || hasDiagnosticContent(item) || hasRelatedFileContent(item) || hasSnippetContent(item)) {
             candidates.push_back(item);
         }
     }
@@ -264,6 +269,20 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         QString block;
         block += comment + QStringLiteral(" Consider these diagnostics from ") + path + QStringLiteral(":\n");
         block += renderDiagnosticValue(comment, item);
+        block += QLatin1Char('\n');
+
+        (void)tryAppend(&out, block, options.maxContextChars);
+    }
+
+    for (const ContextItem &item : std::as_const(candidates)) {
+        if (!hasRelatedFileContent(item)) {
+            continue;
+        }
+
+        const QString path = displayPathForItem(item);
+        QString block;
+        block += comment + QStringLiteral(" Compare this related file from ") + path + QStringLiteral(":\n");
+        block += normalizedSnippet(item.value);
         block += QLatin1Char('\n');
 
         (void)tryAppend(&out, block, options.maxContextChars);

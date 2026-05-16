@@ -10,9 +10,12 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "settings/CompletionSettings.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QTest>
 
@@ -22,7 +25,8 @@ class KateAiConfigPageTest : public QObject
 
 private Q_SLOTS:
     void initTestCase();
-    void showsProviderRecommendationAndShortcutHint();
+    void showsProviderRecommendationShortcutHintAndContextControls();
+    void contextualSettingsApplyFromUi();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -31,7 +35,7 @@ void KateAiConfigPageTest::initTestCase()
     QStandardPaths::setTestModeEnabled(true);
 }
 
-void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
+void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextControls()
 {
     KateAiConfigPage page(nullptr, nullptr);
     page.show();
@@ -41,11 +45,23 @@ void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
     auto *shortcutHint = page.findChild<QLabel *>(QStringLiteral("shortcutHintLabel"));
     auto *providerCombo = page.findChild<QComboBox *>(QStringLiteral("providerCombo"));
     auto *verifySession = page.findChild<QPushButton *>(QStringLiteral("copilotVerifySessionButton"));
+    auto *contextualPrompt = page.findChild<QCheckBox *>(QStringLiteral("contextualPromptCheckBox"));
+    auto *openTabs = page.findChild<QCheckBox *>(QStringLiteral("openTabsContextCheckBox"));
+    auto *recentEdits = page.findChild<QCheckBox *>(QStringLiteral("recentEditsContextCheckBox"));
+    auto *diagnostics = page.findChild<QCheckBox *>(QStringLiteral("diagnosticsContextCheckBox"));
+    auto *relatedFiles = page.findChild<QCheckBox *>(QStringLiteral("relatedFilesContextCheckBox"));
+    auto *excludePatterns = page.findChild<QLineEdit *>(QStringLiteral("contextExcludePatternsEdit"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
     QVERIFY(providerCombo);
     QVERIFY(verifySession);
+    QVERIFY(contextualPrompt);
+    QVERIFY(openTabs);
+    QVERIFY(recentEdits);
+    QVERIFY(diagnostics);
+    QVERIFY(relatedFiles);
+    QVERIFY(excludePatterns);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -59,6 +75,63 @@ void KateAiConfigPageTest::showsProviderRecommendationAndShortcutHint()
     providerCombo->setCurrentIndex(copilotIndex);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("GitHub Copilot")));
+}
+
+void KateAiConfigPageTest::contextualSettingsApplyFromUi()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *contextualPrompt = page.findChild<QCheckBox *>(QStringLiteral("contextualPromptCheckBox"));
+    auto *maxContextItems = page.findChild<QSpinBox *>(QStringLiteral("maxContextItemsSpinBox"));
+    auto *maxContextChars = page.findChild<QSpinBox *>(QStringLiteral("maxContextCharsSpinBox"));
+    auto *openTabs = page.findChild<QCheckBox *>(QStringLiteral("openTabsContextCheckBox"));
+    auto *recentEdits = page.findChild<QCheckBox *>(QStringLiteral("recentEditsContextCheckBox"));
+    auto *diagnostics = page.findChild<QCheckBox *>(QStringLiteral("diagnosticsContextCheckBox"));
+    auto *relatedFiles = page.findChild<QCheckBox *>(QStringLiteral("relatedFilesContextCheckBox"));
+    auto *relatedFilesMaxFiles = page.findChild<QSpinBox *>(QStringLiteral("relatedFilesMaxFilesSpinBox"));
+    auto *relatedFilesMaxChars = page.findChild<QSpinBox *>(QStringLiteral("relatedFilesMaxCharsSpinBox"));
+    auto *relatedFilesMaxCharsPerFile = page.findChild<QSpinBox *>(QStringLiteral("relatedFilesMaxCharsPerFileSpinBox"));
+    auto *excludePatterns = page.findChild<QLineEdit *>(QStringLiteral("contextExcludePatternsEdit"));
+
+    QVERIFY(contextualPrompt);
+    QVERIFY(maxContextItems);
+    QVERIFY(maxContextChars);
+    QVERIFY(openTabs);
+    QVERIFY(recentEdits);
+    QVERIFY(diagnostics);
+    QVERIFY(relatedFiles);
+    QVERIFY(relatedFilesMaxFiles);
+    QVERIFY(relatedFilesMaxChars);
+    QVERIFY(relatedFilesMaxCharsPerFile);
+    QVERIFY(excludePatterns);
+
+    contextualPrompt->setChecked(false);
+    maxContextItems->setValue(9);
+    maxContextChars->setValue(9000);
+    openTabs->setChecked(false);
+    recentEdits->setChecked(false);
+    diagnostics->setChecked(false);
+    relatedFiles->setChecked(false);
+    relatedFilesMaxFiles->setValue(4);
+    relatedFilesMaxChars->setValue(8000);
+    relatedFilesMaxCharsPerFile->setValue(2000);
+    excludePatterns->setText(QStringLiteral("*.secret; generated/*"));
+
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableContextualPrompt, false);
+    QCOMPARE(out.maxContextItems, 9);
+    QCOMPARE(out.maxContextChars, 9000);
+    QCOMPARE(out.enableOpenTabsContext, false);
+    QCOMPARE(out.enableRecentEditsContext, false);
+    QCOMPARE(out.enableDiagnosticsContext, false);
+    QCOMPARE(out.enableRelatedFilesContext, false);
+    QCOMPARE(out.relatedFilesMaxFiles, 4);
+    QCOMPARE(out.relatedFilesMaxChars, 8000);
+    QCOMPARE(out.relatedFilesMaxCharsPerFile, 2000);
+    QCOMPARE(out.contextExcludePatterns, QStringList({QStringLiteral("*.secret"), QStringLiteral("generated/*")}));
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()
