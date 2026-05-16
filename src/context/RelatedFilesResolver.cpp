@@ -79,10 +79,16 @@ namespace
     return info.completeBaseName();
 }
 
+[[nodiscard]] bool hasCabalFile(const QDir &dir)
+{
+    return !dir.entryList(QStringList{QStringLiteral("*.cabal")}, QDir::Files, QDir::Name).isEmpty();
+}
+
 [[nodiscard]] bool hasAnyProjectMarker(const QDir &dir)
 {
     return dir.exists(QStringLiteral(".git")) || dir.exists(QStringLiteral("CMakeLists.txt")) || dir.exists(QStringLiteral("package.json"))
-        || dir.exists(QStringLiteral("pyproject.toml")) || dir.exists(QStringLiteral("Cargo.toml"));
+        || dir.exists(QStringLiteral("package.yaml")) || dir.exists(QStringLiteral("pyproject.toml")) || dir.exists(QStringLiteral("Cargo.toml"))
+        || dir.exists(QStringLiteral("cabal.project")) || dir.exists(QStringLiteral("stack.yaml")) || hasCabalFile(dir);
 }
 
 [[nodiscard]] QHash<QString, QString> normalizedOpenDocuments(const QHash<QString, QString> &docs)
@@ -308,13 +314,213 @@ void addRustCandidates(CandidateAccumulator *acc, const QString &text, const QSt
     }
 }
 
+struct HaskellSourceRoot {
+    QString path;
+    int scoreOffset = 0;
+};
+
+[[nodiscard]] QVector<HaskellSourceRoot> uniqueExistingDirectories(const QVector<HaskellSourceRoot> &paths)
+{
+    QVector<HaskellSourceRoot> out;
+    QSet<QString> seen;
+    for (const HaskellSourceRoot &root : paths) {
+        const QString clean = absoluteCleanPath(root.path);
+        if (clean.isEmpty() || seen.contains(clean) || !QFileInfo(clean).isDir()) {
+            continue;
+        }
+        seen.insert(clean);
+        out.push_back(HaskellSourceRoot{clean, root.scoreOffset});
+    }
+    return out;
+}
+
+[[nodiscard]] QString haskellRootNameForRelativePath(const QString &relativePath)
+{
+    static const QStringList rootNames = {
+        QStringLiteral("src"), QStringLiteral("app"), QStringLiteral("test"), QStringLiteral("tests"), QStringLiteral("lib"), QStringLiteral("library"),
+    };
+
+    for (const QString &rootName : rootNames) {
+        if (relativePath == rootName || relativePath.startsWith(rootName + QLatin1Char('/'))) {
+            return rootName;
+        }
+    }
+
+    return {};
+}
+
+[[nodiscard]] int haskellRootScoreOffset(const QString &rootName, const QString &activeRootName)
+{
+    if (rootName == activeRootName) {
+        return 8;
+    }
+
+    if (activeRootName == QStringLiteral("test") || activeRootName == QStringLiteral("tests")) {
+        if (rootName == QStringLiteral("test") || rootName == QStringLiteral("tests")) {
+            return 6;
+        }
+        return 0;
+    }
+
+    if (activeRootName == QStringLiteral("src") || activeRootName == QStringLiteral("lib") || activeRootName == QStringLiteral("library")) {
+        if (rootName == QStringLiteral("src") || rootName == QStringLiteral("lib") || rootName == QStringLiteral("library")) {
+            return 6;
+        }
+        return -4;
+    }
+
+    return 0;
+}
+
+[[nodiscard]] QVector<HaskellSourceRoot> haskellSourceRoots(const CandidateAccumulator &acc, const QString &projectRoot)
+{
+    QVector<HaskellSourceRoot> roots;
+
+    if (!projectRoot.isEmpty()) {
+        const QDir root(projectRoot);
+        const QString activeRoot = haskellRootNameForRelativePath(root.relativeFilePath(acc.current.absoluteFilePath()));
+        for (const QString &rootName : {QStringLiteral("src"), QStringLiteral("app"), QStringLiteral("test"), QStringLiteral("tests"), QStringLiteral("lib"), QStringLiteral("library")}) {
+            roots.push_back(HaskellSourceRoot{root.filePath(rootName), haskellRootScoreOffset(rootName, activeRoot)});
+        }
+        roots.push_back(HaskellSourceRoot{root.absolutePath(), -8});
+    }
+
+    roots.push_back(HaskellSourceRoot{acc.current.absolutePath(), -10});
+
+    return uniqueExistingDirectories(roots);
+}
+
+[[nodiscard]] QString stripHaskellExtension(QString path)
+{
+    if (path.endsWith(QStringLiteral(".lhs-boot"), Qt::CaseInsensitive)) {
+        path.chop(9);
+    } else if (path.endsWith(QStringLiteral(".hs-boot"), Qt::CaseInsensitive)) {
+        path.chop(8);
+    } else if (path.endsWith(QStringLiteral(".lhs"), Qt::CaseInsensitive)) {
+        path.chop(4);
+    } else if (path.endsWith(QStringLiteral(".hs"), Qt::CaseInsensitive)) {
+        path.chop(3);
+    }
+    return path;
+}
+
+[[nodiscard]] QString stripHaskellTestSuffix(QString path)
+{
+    if (path.endsWith(QStringLiteral("Spec"))) {
+        path.chop(4);
+    } else if (path.endsWith(QStringLiteral("Test"))) {
+        path.chop(4);
+    }
+    return path;
+}
+
+void addHaskellModule(CandidateAccumulator *acc, const QString &module, const QVector<HaskellSourceRoot> &sourceRoots, int score, bool sourceImport)
+{
+    QString clean = module.trimmed();
+    if (clean.isEmpty() || clean.startsWith(QStringLiteral("Paths_"))) {
+        return;
+    }
+
+    clean.replace(QLatin1Char('.'), QLatin1Char('/'));
+    for (const HaskellSourceRoot &root : sourceRoots) {
+        const QDir dir(root.path);
+        const int rootScore = score + root.scoreOffset;
+        if (sourceImport) {
+            acc->add(dir.filePath(clean + QStringLiteral(".hs-boot")), rootScore + 3);
+            acc->add(dir.filePath(clean + QStringLiteral(".lhs-boot")), rootScore + 2);
+        }
+        acc->add(dir.filePath(clean + QStringLiteral(".hs")), rootScore);
+        acc->add(dir.filePath(clean + QStringLiteral(".lhs")), rootScore - 1);
+    }
+}
+
+void addHaskellImports(CandidateAccumulator *acc, const QString &text, const QVector<HaskellSourceRoot> &sourceRoots)
+{
+    static const QRegularExpression importRe(QStringLiteral(
+        "^\\s*>?\\s*import\\s+((?:safe\\s+|unsafe\\s+|qualified\\s+|\"[^\"]+\"\\s+|\\{-#\\s*SOURCE\\s*#-\\}\\s+)*)"
+        "([A-Z][A-Za-z0-9_']*(?:\\.[A-Z][A-Za-z0-9_']*)*)"));
+
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        const QRegularExpressionMatch match = importRe.match(line);
+        if (match.hasMatch()) {
+            const bool sourceImport = match.captured(1).contains(QStringLiteral("SOURCE"), Qt::CaseInsensitive);
+            addHaskellModule(acc, match.captured(2), sourceRoots, 94, sourceImport);
+        }
+    }
+}
+
+void addHaskellMetadata(CandidateAccumulator *acc, const QString &projectRoot)
+{
+    if (projectRoot.isEmpty()) {
+        return;
+    }
+
+    const QDir root(projectRoot);
+    const QStringList cabalFiles = root.entryList(QStringList{QStringLiteral("*.cabal")}, QDir::Files, QDir::Name);
+    for (const QString &file : cabalFiles) {
+        acc->add(root.filePath(file), 88);
+    }
+
+    acc->add(root.filePath(QStringLiteral("package.yaml")), 87);
+    acc->add(root.filePath(QStringLiteral("cabal.project")), 86);
+    acc->add(root.filePath(QStringLiteral("stack.yaml")), 86);
+    acc->add(root.filePath(QStringLiteral("hie.yaml")), 84);
+}
+
+void addHaskellTestCompanions(CandidateAccumulator *acc, const QString &projectRoot)
+{
+    if (projectRoot.isEmpty()) {
+        return;
+    }
+
+    const QDir root(projectRoot);
+    const QString rel = root.relativeFilePath(acc->current.absoluteFilePath());
+    const QString stem = stripHaskellExtension(rel);
+    static const QStringList extensions = {QStringLiteral(".hs"), QStringLiteral(".lhs")};
+
+    if (stem.startsWith(QStringLiteral("src/"))) {
+        const QString modulePath = stem.mid(QStringLiteral("src/").size());
+        for (const QString &testRoot : {QStringLiteral("test"), QStringLiteral("tests")}) {
+            for (const QString &suffix : {QStringLiteral("Spec"), QStringLiteral("Test")}) {
+                for (const QString &ext : extensions) {
+                    acc->add(root.filePath(testRoot + QLatin1Char('/') + modulePath + suffix + ext), 83);
+                }
+            }
+        }
+        return;
+    }
+
+    for (const QString &testRoot : {QStringLiteral("test/"), QStringLiteral("tests/")}) {
+        if (!stem.startsWith(testRoot)) {
+            continue;
+        }
+
+        const QString modulePath = stripHaskellTestSuffix(stem.mid(testRoot.size()));
+        for (const QString &sourceRoot : {QStringLiteral("src"), QStringLiteral("lib"), QStringLiteral("library")}) {
+            for (const QString &ext : extensions) {
+                acc->add(root.filePath(sourceRoot + QLatin1Char('/') + modulePath + ext), 93);
+            }
+        }
+    }
+}
+
+void addHaskellCandidates(CandidateAccumulator *acc, const QString &text, const QString &projectRoot)
+{
+    const QVector<HaskellSourceRoot> sourceRoots = haskellSourceRoots(*acc, projectRoot);
+    addHaskellImports(acc, text, sourceRoots);
+    addHaskellMetadata(acc, projectRoot);
+    addHaskellTestCompanions(acc, projectRoot);
+}
+
 void addGenericCompanions(CandidateAccumulator *acc)
 {
     static const QStringList exts = {
         QStringLiteral("h"),   QStringLiteral("hpp"), QStringLiteral("hh"),  QStringLiteral("cpp"), QStringLiteral("cc"),
         QStringLiteral("cxx"), QStringLiteral("c"),   QStringLiteral("py"),  QStringLiteral("ts"),  QStringLiteral("tsx"),
         QStringLiteral("js"),  QStringLiteral("jsx"), QStringLiteral("css"), QStringLiteral("scss"), QStringLiteral("json"),
-        QStringLiteral("ui"),  QStringLiteral("qrc"), QStringLiteral("rs"),  QStringLiteral("toml"),
+        QStringLiteral("ui"),  QStringLiteral("qrc"), QStringLiteral("rs"),  QStringLiteral("toml"), QStringLiteral("hs"),
+        QStringLiteral("lhs"),
     };
     addSameBasenameFiles(acc, exts, 50);
 }
@@ -401,6 +607,11 @@ QVector<RelatedFileCandidate> RelatedFilesResolver::resolve(const RelatedFilesRe
 
     if (language.contains(QStringLiteral("rust")) || suffix == QStringLiteral("rs")) {
         addRustCandidates(&acc, request.currentText, projectRoot);
+    }
+
+    if (language.contains(QStringLiteral("haskell")) || suffix == QStringLiteral("hs") || suffix == QStringLiteral("lhs")
+        || suffix == QStringLiteral("hs-boot") || suffix == QStringLiteral("lhs-boot")) {
+        addHaskellCandidates(&acc, request.currentText, projectRoot);
     }
 
     addGenericCompanions(&acc);

@@ -36,6 +36,16 @@ QStringList paths(const QVector<RelatedFileCandidate> &candidates)
     }
     return out;
 }
+
+QStringList relativePaths(const QVector<RelatedFileCandidate> &candidates, const QString &root)
+{
+    QStringList out;
+    const QDir rootDir(root);
+    for (const RelatedFileCandidate &candidate : candidates) {
+        out.push_back(rootDir.relativeFilePath(candidate.path));
+    }
+    return out;
+}
 }
 
 class RelatedFilesResolverTest : public QObject
@@ -47,6 +57,10 @@ private Q_SLOTS:
     void pythonImportsResolveLocalModules();
     void javascriptImportsResolveRelativeFilesAndSiblings();
     void rustModulesResolveCargoAndModuleFiles();
+    void haskellImportsResolveLocalModulesAndPackageMetadata();
+    void haskellSourceAndSpecFilesResolveEachOther();
+    void haskellLiterateImportsAndSourceImportsResolveBootFiles();
+    void haskellPrefersActiveSourceRootForDuplicateModules();
     void rejectsImportsOutsideProjectRootAndRemoteUris();
     void preferOpenDocumentsMarksOpenCandidates();
 };
@@ -150,6 +164,135 @@ void RelatedFilesResolverTest::rustModulesResolveCargoAndModuleFiles()
     QVERIFY(names.contains(QStringLiteral("Cargo.toml")));
     QVERIFY(names.contains(QStringLiteral("foo.rs")));
     QVERIFY(names.contains(QStringLiteral("mod.rs")));
+}
+
+void RelatedFilesResolverTest::haskellImportsResolveLocalModulesAndPackageMetadata()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString srcDir = dir.filePath(QStringLiteral("src"));
+    writeText(dir.filePath(QStringLiteral("demo.cabal")), QStringLiteral("cabal-version: 3.0\nname: demo\n"));
+    writeText(dir.filePath(QStringLiteral("package.yaml")), QStringLiteral("name: demo\n"));
+    writeText(dir.filePath(QStringLiteral("stack.yaml")), QStringLiteral("resolver: lts-22.0\n"));
+    writeText(dir.filePath(QStringLiteral("cabal.project")), QStringLiteral("packages: .\n"));
+    writeText(dir.filePath(QStringLiteral("hie.yaml")), QStringLiteral("cradle:\n  cabal:\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Bar.hs"),
+              QStringLiteral("module Foo.Bar where\nimport qualified Foo.Baz as Baz\nimport \"text\" Data.Text (Text)\nimport {-# SOURCE #-} Foo.Source\nimport Paths_demo\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Baz.hs"), QStringLiteral("module Foo.Baz where\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Source.lhs"), QStringLiteral("> module Foo.Source where\n"));
+    writeText(srcDir + QStringLiteral("/Paths_demo.hs"), QStringLiteral("module Paths_demo where\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = srcDir + QStringLiteral("/Foo/Bar.hs");
+    request.currentText = QStringLiteral("module Foo.Bar where\nimport qualified Foo.Baz as Baz\nimport \"text\" Data.Text (Text)\nimport {-# SOURCE #-} Foo.Source\nimport Paths_demo\n");
+    request.languageId = QStringLiteral("Haskell");
+    request.projectRoot = dir.path();
+
+    const QVector<RelatedFileCandidate> candidates = RelatedFilesResolver::resolve(request);
+    const QStringList names = paths(candidates);
+    const QStringList rels = relativePaths(candidates, dir.path());
+
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Baz.hs")));
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Source.lhs")));
+    QVERIFY(names.contains(QStringLiteral("demo.cabal")));
+    QVERIFY(names.contains(QStringLiteral("package.yaml")));
+    QVERIFY(names.contains(QStringLiteral("stack.yaml")));
+    QVERIFY(names.contains(QStringLiteral("cabal.project")));
+    QVERIFY(names.contains(QStringLiteral("hie.yaml")));
+    QVERIFY(!rels.contains(QStringLiteral("src/Paths_demo.hs")));
+    QVERIFY(rels.indexOf(QStringLiteral("src/Foo/Baz.hs")) < rels.indexOf(QStringLiteral("demo.cabal")));
+}
+
+void RelatedFilesResolverTest::haskellSourceAndSpecFilesResolveEachOther()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString srcDir = dir.filePath(QStringLiteral("src"));
+    const QString testDir = dir.filePath(QStringLiteral("test"));
+    writeText(srcDir + QStringLiteral("/Foo/Bar.hs"), QStringLiteral("module Foo.Bar where\n"));
+    writeText(testDir + QStringLiteral("/Foo/BarSpec.hs"), QStringLiteral("module Foo.BarSpec where\nimport Foo.Bar\n"));
+    writeText(testDir + QStringLiteral("/Foo/BarTest.hs"), QStringLiteral("module Foo.BarTest where\nimport Foo.Bar\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = srcDir + QStringLiteral("/Foo/Bar.hs");
+    request.currentText = QStringLiteral("module Foo.Bar where\n");
+    request.languageId = QStringLiteral("Haskell");
+    request.projectRoot = dir.path();
+
+    QStringList rels = relativePaths(RelatedFilesResolver::resolve(request), dir.path());
+    QVERIFY(rels.contains(QStringLiteral("test/Foo/BarSpec.hs")));
+    QVERIFY(rels.contains(QStringLiteral("test/Foo/BarTest.hs")));
+
+    request.currentFilePath = testDir + QStringLiteral("/Foo/BarSpec.hs");
+    request.currentText = QStringLiteral("module Foo.BarSpec where\nimport Foo.Bar\n");
+
+    rels = relativePaths(RelatedFilesResolver::resolve(request), dir.path());
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Bar.hs")));
+}
+
+void RelatedFilesResolverTest::haskellLiterateImportsAndSourceImportsResolveBootFiles()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString srcDir = dir.filePath(QStringLiteral("src"));
+    writeText(srcDir + QStringLiteral("/Foo/Doc.lhs"), QStringLiteral("> module Foo.Doc where\n> import Foo.Baz\n> import {-# SOURCE #-} Foo.Boot\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Baz.hs"), QStringLiteral("module Foo.Baz where\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Boot.hs-boot"), QStringLiteral("module Foo.Boot where\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Boot.hs"), QStringLiteral("module Foo.Boot where\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = srcDir + QStringLiteral("/Foo/Doc.lhs");
+    request.currentText = QStringLiteral("> module Foo.Doc where\n> import Foo.Baz\n> import {-# SOURCE #-} Foo.Boot\n");
+    request.languageId = QStringLiteral("Haskell");
+    request.projectRoot = dir.path();
+
+    QStringList rels = relativePaths(RelatedFilesResolver::resolve(request), dir.path());
+
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Baz.hs")));
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Boot.hs-boot")));
+    QVERIFY(rels.indexOf(QStringLiteral("src/Foo/Boot.hs-boot")) < rels.indexOf(QStringLiteral("src/Foo/Boot.hs")));
+
+    request.currentFilePath = srcDir + QStringLiteral("/Foo/Boot.hs-boot");
+    request.currentText = QStringLiteral("module Foo.Boot where\nimport Foo.Baz\n");
+
+    QVERIFY(relativePaths(RelatedFilesResolver::resolve(request), dir.path()).contains(QStringLiteral("src/Foo/Baz.hs")));
+}
+
+void RelatedFilesResolverTest::haskellPrefersActiveSourceRootForDuplicateModules()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString srcDir = dir.filePath(QStringLiteral("src"));
+    const QString testDir = dir.filePath(QStringLiteral("test"));
+    writeText(srcDir + QStringLiteral("/Foo/Bar.hs"), QStringLiteral("module Foo.Bar where\nimport Foo.Baz\n"));
+    writeText(srcDir + QStringLiteral("/Foo/Baz.hs"), QStringLiteral("module Foo.Baz where\n"));
+    writeText(testDir + QStringLiteral("/Foo/Baz.hs"), QStringLiteral("module Foo.Baz where\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = srcDir + QStringLiteral("/Foo/Bar.hs");
+    request.currentText = QStringLiteral("module Foo.Bar where\nimport Foo.Baz\n");
+    request.languageId = QStringLiteral("Haskell");
+    request.projectRoot = dir.path();
+
+    QStringList rels = relativePaths(RelatedFilesResolver::resolve(request), dir.path());
+
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Baz.hs")));
+    QVERIFY(rels.contains(QStringLiteral("test/Foo/Baz.hs")));
+    QVERIFY(rels.indexOf(QStringLiteral("src/Foo/Baz.hs")) < rels.indexOf(QStringLiteral("test/Foo/Baz.hs")));
+
+    writeText(testDir + QStringLiteral("/Foo/BarSpec.hs"), QStringLiteral("module Foo.BarSpec where\nimport Foo.Baz\n"));
+    request.currentFilePath = testDir + QStringLiteral("/Foo/BarSpec.hs");
+    request.currentText = QStringLiteral("module Foo.BarSpec where\nimport Foo.Baz\n");
+
+    rels = relativePaths(RelatedFilesResolver::resolve(request), dir.path());
+
+    QVERIFY(rels.contains(QStringLiteral("src/Foo/Baz.hs")));
+    QVERIFY(rels.contains(QStringLiteral("test/Foo/Baz.hs")));
+    QVERIFY(rels.indexOf(QStringLiteral("test/Foo/Baz.hs")) < rels.indexOf(QStringLiteral("src/Foo/Baz.hs")));
 }
 
 void RelatedFilesResolverTest::rejectsImportsOutsideProjectRootAndRemoteUris()
