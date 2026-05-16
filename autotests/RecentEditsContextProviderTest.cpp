@@ -44,6 +44,7 @@ class RecentEditsContextProviderTest : public QObject
 private Q_SLOTS:
     void emitsRecentEditsAsContextItems();
     void filtersActiveFileEditsNearCursor();
+    void keepsUnsavedDisplayNameEditsWhenNameIsSafe();
 };
 
 void RecentEditsContextProviderTest::emitsRecentEditsAsContextItems()
@@ -104,6 +105,28 @@ void RecentEditsContextProviderTest::filtersActiveFileEditsNearCursor()
     QCOMPARE(items.size(), 1);
     QVERIFY(items.constFirst().value.contains(QStringLiteral("farChanged")));
     QVERIFY(!items.constFirst().value.contains(QStringLiteral("nearChanged")));
+}
+
+void RecentEditsContextProviderTest::keepsUnsavedDisplayNameEditsWhenNameIsSafe()
+{
+    RecentEditsTracker tracker;
+    tracker.addRecentEdit(editForPath(QStringLiteral("Scratch.cpp"), 0, 0, QStringLiteral("@@ lines 1-1\n- old\n+ fresh")));
+
+    RecentEditsContextOptions options;
+    options.maxEdits = 8;
+
+    RecentEditsContextProvider provider(&tracker, options);
+
+    ContextResolveRequest request;
+    request.uri = QStringLiteral("/repo/src/main.cpp");
+    request.languageId = QStringLiteral("C++");
+    request.position = KTextEditor::Cursor(10, 1);
+
+    const QVector<ContextItem> items = provider.resolve(request);
+
+    QCOMPARE(items.size(), 1);
+    QVERIFY(items.constFirst().value.contains(QStringLiteral("File: Scratch.cpp")));
+    QVERIFY(items.constFirst().value.contains(QStringLiteral("fresh")));
 }
 
 QTEST_MAIN(RecentEditsContextProviderTest)

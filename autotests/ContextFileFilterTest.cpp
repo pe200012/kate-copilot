@@ -9,6 +9,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -19,6 +20,8 @@ namespace
 {
 void writeFile(const QString &path, const QByteArray &bytes)
 {
+    QFileInfo info(path);
+    QVERIFY(QDir().mkpath(info.absolutePath()));
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly));
     QCOMPARE(file.write(bytes), bytes.size());
@@ -32,6 +35,8 @@ class ContextFileFilterTest : public QObject
 private Q_SLOTS:
     void rejectsExcludedDirectoriesAndGeneratedFiles();
     void rejectsPrivateBinaryAndLargeFiles();
+    void allowsSourceNamesContainingBroadSecurityWords();
+    void rejectsCommonSecretFilesAndDirectories();
     void appliesUserExcludePatterns();
     void readsBoundedUtf8Text();
 };
@@ -58,7 +63,7 @@ void ContextFileFilterTest::rejectsPrivateBinaryAndLargeFiles()
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
 
-    const QString secret = dir.filePath(QStringLiteral("secret_token.txt"));
+    const QString secret = dir.filePath(QStringLiteral(".env.local"));
     const QString binary = dir.filePath(QStringLiteral("image.png"));
     const QString large = dir.filePath(QStringLiteral("large.cpp"));
 
@@ -72,6 +77,36 @@ void ContextFileFilterTest::rejectsPrivateBinaryAndLargeFiles()
     QVERIFY(!ContextFileFilter::isAllowedFile(secret, options));
     QVERIFY(!ContextFileFilter::isAllowedFile(binary, options));
     QVERIFY(!ContextFileFilter::isAllowedFile(large, options));
+}
+
+void ContextFileFilterTest::allowsSourceNamesContainingBroadSecurityWords()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    ContextFileFilterOptions options;
+    options.maxFileChars = 4000;
+
+    QVERIFY(ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("src/tokenizer.cpp")), options));
+    QVERIFY(ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("src/private_api.cpp")), options));
+    QVERIFY(ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("tests/password_validator_test.cpp")), options));
+}
+
+void ContextFileFilterTest::rejectsCommonSecretFilesAndDirectories()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    ContextFileFilterOptions options;
+    options.maxFileChars = 4000;
+
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".env.production")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".envrc")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("secrets/api.txt")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("credentials/prod.json")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".ssh/id_ed25519")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("certs/prod.pem")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("certs/prod.key")), options));
 }
 
 void ContextFileFilterTest::appliesUserExcludePatterns()

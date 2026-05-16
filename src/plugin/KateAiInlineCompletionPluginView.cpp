@@ -10,6 +10,7 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 
 #include "auth/CopilotAuthManager.h"
+#include "context/DiagnosticsAdapter.h"
 #include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
 #include "session/EditorSession.h"
@@ -38,6 +39,8 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     m_copilotAuthManager = new KateAiInlineCompletion::CopilotAuthManager(m_secretStore, m_networkManager, this);
     m_recentEditsTracker = new KateAiInlineCompletion::RecentEditsTracker(this);
     m_diagnosticStore = new KateAiInlineCompletion::DiagnosticStore(this);
+    m_diagnosticsAdapter = new KateAiInlineCompletion::DiagnosticsAdapter(this);
+    m_diagnosticsAdapter->attach(m_mainWindow, m_diagnosticStore);
     applyRecentEditsSettings();
 
     setupActions();

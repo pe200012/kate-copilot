@@ -75,6 +75,7 @@ private:
     void setChanged(bool isChanged);
 
     void updateCredentialsUi();
+    void updateContextControlsUi();
     void refreshProviderHint();
     void refreshApiKeyStatus();
     void refreshCopilotStatus();

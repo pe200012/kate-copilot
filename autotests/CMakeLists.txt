@@ -83,6 +83,14 @@ ecm_add_test(DiagnosticsContextProviderTest.cpp
         KF6::TextEditor
 )
 
+ecm_add_test(DiagnosticsAdapterTest.cpp
+    TEST_NAME kateaiinlinecompletion_diagnostics_adapter_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+
 ecm_add_test(ContextFileFilterTest.cpp
     TEST_NAME kateaiinlinecompletion_context_file_filter_test
     LINK_LIBRARIES
@@ -194,6 +202,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextFileFilter.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesContextProvider.cpp
@@ -242,6 +251,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
     ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextFileFilter.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesContextProvider.cpp

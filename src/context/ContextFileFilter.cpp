@@ -64,9 +64,34 @@ namespace
 {
     const QString lower = normalizedPath(path).toLower();
     const QString file = QFileInfo(lower).fileName();
-    return file == QStringLiteral(".env") || file.startsWith(QStringLiteral(".env.")) || lower.contains(QStringLiteral("secret"))
-        || lower.contains(QStringLiteral("token")) || lower.contains(QStringLiteral("credential")) || lower.contains(QStringLiteral("password"))
-        || lower.contains(QStringLiteral("private"));
+    if (file == QStringLiteral(".env") || file == QStringLiteral(".envrc") || file.startsWith(QStringLiteral(".env."))) {
+        return true;
+    }
+
+    static const QStringList secretDirectories = {
+        QStringLiteral("secrets"),
+        QStringLiteral("credentials"),
+        QStringLiteral(".ssh"),
+    };
+    const QStringList parts = pathParts(lower);
+    for (int i = 0; i + 1 < parts.size(); ++i) {
+        if (secretDirectories.contains(parts.at(i))) {
+            return true;
+        }
+    }
+
+    static const QStringList secretExtensions = {
+        QStringLiteral("key"),
+        QStringLiteral("p12"),
+        QStringLiteral("pem"),
+        QStringLiteral("pfx"),
+    };
+    if (secretExtensions.contains(QFileInfo(lower).suffix())) {
+        return true;
+    }
+
+    return file == QStringLiteral("id_rsa") || file == QStringLiteral("id_rsa.pub") || file == QStringLiteral("id_ed25519")
+        || file == QStringLiteral("id_ed25519.pub");
 }
 
 [[nodiscard]] bool matchesUserPattern(const QString &path, const QStringList &patterns)

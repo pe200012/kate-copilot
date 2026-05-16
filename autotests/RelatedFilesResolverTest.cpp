@@ -55,7 +55,9 @@ class RelatedFilesResolverTest : public QObject
 private Q_SLOTS:
     void cppSourceFindsHeaderCMakeAndQtCompanions();
     void pythonImportsResolveLocalModules();
+    void pythonRelativeImportsRespectDotDepth();
     void javascriptImportsResolveRelativeFilesAndSiblings();
+    void qtJsonHeuristicIncludesMetadataAndSkipsUnrelatedJson();
     void rustModulesResolveCargoAndModuleFiles();
     void haskellImportsResolveLocalModulesAndPackageMetadata();
     void haskellSourceAndSpecFilesResolveEachOther();
@@ -116,6 +118,30 @@ void RelatedFilesResolverTest::pythonImportsResolveLocalModules()
     QVERIFY(names.contains(QStringLiteral("__init__.py")));
 }
 
+void RelatedFilesResolverTest::pythonRelativeImportsRespectDotDepth()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString root = dir.filePath(QStringLiteral("repo"));
+    writeText(root + QStringLiteral("/pkg/app/main.py"), QStringLiteral("from ..core.foo import Bar\nfrom ...shared.util import baz\n"));
+    writeText(root + QStringLiteral("/pkg/core/foo.py"), QStringLiteral("class Bar: pass\n"));
+    writeText(root + QStringLiteral("/shared/util.py"), QStringLiteral("def baz(): pass\n"));
+    writeText(root + QStringLiteral("/pkg/app/core/foo.py"), QStringLiteral("class Wrong: pass\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = root + QStringLiteral("/pkg/app/main.py");
+    request.currentText = QStringLiteral("from ..core.foo import Bar\nfrom ...shared.util import baz\n");
+    request.languageId = QStringLiteral("Python");
+    request.projectRoot = root;
+
+    const QStringList rel = relativePaths(RelatedFilesResolver::resolve(request), root);
+
+    QVERIFY(rel.contains(QStringLiteral("pkg/core/foo.py")));
+    QVERIFY(rel.contains(QStringLiteral("shared/util.py")));
+    QVERIFY(!rel.contains(QStringLiteral("pkg/app/core/foo.py")));
+}
+
 void RelatedFilesResolverTest::javascriptImportsResolveRelativeFilesAndSiblings()
 {
     QTemporaryDir dir;
@@ -140,6 +166,31 @@ void RelatedFilesResolverTest::javascriptImportsResolveRelativeFilesAndSiblings(
     QVERIFY(names.contains(QStringLiteral("util.js")));
     QVERIFY(names.contains(QStringLiteral("Button.css")));
     QVERIFY(names.contains(QStringLiteral("Button.test.tsx")));
+}
+
+void RelatedFilesResolverTest::qtJsonHeuristicIncludesMetadataAndSkipsUnrelatedJson()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString srcDir = dir.filePath(QStringLiteral("src"));
+    writeText(srcDir + QStringLiteral("/Foo.cpp"), QStringLiteral("#include \"Foo.h\"\n"));
+    writeText(srcDir + QStringLiteral("/Foo.h"), QStringLiteral("class Foo {};\n"));
+    writeText(srcDir + QStringLiteral("/Foo.json"), QStringLiteral("{}\n"));
+    writeText(srcDir + QStringLiteral("/metadata.json"), QStringLiteral("{\"KPlugin\": {\"Name\": \"Foo\"}}\n"));
+    writeText(srcDir + QStringLiteral("/unrelated.json"), QStringLiteral("{\"theme\": \"dark\"}\n"));
+
+    RelatedFilesResolveRequest request;
+    request.currentFilePath = srcDir + QStringLiteral("/Foo.cpp");
+    request.currentText = QStringLiteral("#include \"Foo.h\"\n");
+    request.languageId = QStringLiteral("C++");
+    request.projectRoot = dir.path();
+
+    const QStringList names = paths(RelatedFilesResolver::resolve(request));
+
+    QVERIFY(names.contains(QStringLiteral("Foo.json")));
+    QVERIFY(names.contains(QStringLiteral("metadata.json")));
+    QVERIFY(!names.contains(QStringLiteral("unrelated.json")));
 }
 
 void RelatedFilesResolverTest::rustModulesResolveCargoAndModuleFiles()

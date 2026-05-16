@@ -130,7 +130,24 @@ void addQtCompanions(CandidateAccumulator *acc)
 
     const QStringList jsonFiles = dir.entryList(QStringList{QStringLiteral("*.json")}, QDir::Files, QDir::Name);
     for (const QString &file : jsonFiles) {
-        acc->add(dir.filePath(file), 65);
+        if (file == base + QStringLiteral(".json")) {
+            continue;
+        }
+
+        const QString path = dir.filePath(file);
+        bool ok = false;
+        const QString text = ContextFileFilter::readTextFile(path, acc->filterOptions, &ok);
+        if (!ok) {
+            continue;
+        }
+
+        const QString lower = text.toLower();
+        if (text.contains(QStringLiteral("KPlugin")) || text.contains(QStringLiteral("X-KDE")) || text.contains(QStringLiteral("IID"))
+            || text.contains(QStringLiteral("MetaData")) || text.contains(QStringLiteral("KPackage"))
+            || text.contains(QStringLiteral("X-KDevelop")) || lower.contains(QStringLiteral("kplugin"))
+            || lower.contains(QStringLiteral("x-kde")) || lower.contains(QStringLiteral("metadata"))) {
+            acc->add(path, 62);
+        }
     }
 }
 
@@ -158,9 +175,16 @@ void addPythonModule(CandidateAccumulator *acc, const QString &module)
     }
 
     QDir baseDir = acc->current.absoluteDir();
-    while (clean.startsWith(QLatin1Char('.'))) {
-        clean.remove(0, 1);
+    int leadingDots = 0;
+    while (leadingDots < clean.size() && clean.at(leadingDots) == QLatin1Char('.')) {
+        ++leadingDots;
     }
+    for (int i = 1; i < leadingDots; ++i) {
+        if (!baseDir.cdUp()) {
+            return;
+        }
+    }
+    clean = clean.mid(leadingDots);
     clean.replace(QLatin1Char('.'), QLatin1Char('/'));
     if (clean.isEmpty()) {
         return;

@@ -7,6 +7,7 @@
 
 #include "context/RecentEditsContextProvider.h"
 
+#include "context/ContextFileFilter.h"
 #include "context/ProjectContextResolver.h"
 #include "context/RecentEditsTracker.h"
 
@@ -52,14 +53,6 @@ namespace
         return line - edit.endLine <= limit;
     }
     return true;
-}
-
-[[nodiscard]] bool isPrivateLookingPath(const QString &path)
-{
-    const QString p = path.toLower();
-    return p.contains(QStringLiteral("/.env")) || p.endsWith(QStringLiteral(".env")) || p.contains(QStringLiteral("secret"))
-        || p.contains(QStringLiteral("token")) || p.contains(QStringLiteral("credential")) || p.contains(QStringLiteral("password"))
-        || p.contains(QStringLiteral("private"));
 }
 
 [[nodiscard]] QString relativeDisplayPath(const QString &uri, const QString &projectRoot)
@@ -132,7 +125,9 @@ QVector<ContextItem> RecentEditsContextProvider::resolve(const ContextResolveReq
         }
 
         const QString editLocalPath = localPathFromUri(edit.uri);
-        if (isPrivateLookingPath(edit.uri) || isPrivateLookingPath(editLocalPath)) {
+        ContextFileFilterOptions filterOptions;
+        const QString filterPath = editLocalPath.isEmpty() ? edit.uri : editLocalPath;
+        if (!ContextFileFilter::isAllowedPath(filterPath, filterOptions)) {
             continue;
         }
 

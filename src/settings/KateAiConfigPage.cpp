@@ -483,6 +483,7 @@ void KateAiConfigPage::reset()
 
 void KateAiConfigPage::slotUiChanged()
 {
+    updateContextControlsUi();
     setChanged(true);
 }
 
@@ -699,6 +700,7 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_relatedFilesMaxCharsPerFile->setValue(v.relatedFilesMaxCharsPerFile);
     m_contextExcludePatterns->setText(v.contextExcludePatterns.join(QStringLiteral("; ")));
 
+    updateContextControlsUi();
     updateCredentialsUi();
 }
 
@@ -741,6 +743,27 @@ void KateAiConfigPage::setChanged(bool isChanged)
     if (m_changed) {
         Q_EMIT changed();
     }
+}
+
+void KateAiConfigPage::updateContextControlsUi()
+{
+    if (!m_enableContextualPrompt) {
+        return;
+    }
+
+    const bool contextEnabled = m_enableContextualPrompt->isChecked();
+    m_maxContextItems->setEnabled(contextEnabled);
+    m_maxContextChars->setEnabled(contextEnabled);
+    m_enableOpenTabsContext->setEnabled(contextEnabled);
+    m_enableRecentEditsContext->setEnabled(contextEnabled);
+    m_enableDiagnosticsContext->setEnabled(contextEnabled);
+    m_enableRelatedFilesContext->setEnabled(contextEnabled);
+
+    const bool relatedEnabled = contextEnabled && m_enableRelatedFilesContext->isChecked();
+    m_relatedFilesMaxFiles->setEnabled(relatedEnabled);
+    m_relatedFilesMaxChars->setEnabled(relatedEnabled);
+    m_relatedFilesMaxCharsPerFile->setEnabled(relatedEnabled);
+    m_contextExcludePatterns->setEnabled(relatedEnabled);
 }
 
 void KateAiConfigPage::updateCredentialsUi()

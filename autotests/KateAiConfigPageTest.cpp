@@ -27,6 +27,7 @@ private Q_SLOTS:
     void initTestCase();
     void showsProviderRecommendationShortcutHintAndContextControls();
     void contextualSettingsApplyFromUi();
+    void contextControlsFollowMasterAndRelatedFileToggles();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -132,6 +133,45 @@ void KateAiConfigPageTest::contextualSettingsApplyFromUi()
     QCOMPARE(out.relatedFilesMaxChars, 8000);
     QCOMPARE(out.relatedFilesMaxCharsPerFile, 2000);
     QCOMPARE(out.contextExcludePatterns, QStringList({QStringLiteral("*.secret"), QStringLiteral("generated/*")}));
+}
+
+void KateAiConfigPageTest::contextControlsFollowMasterAndRelatedFileToggles()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *contextualPrompt = page.findChild<QCheckBox *>(QStringLiteral("contextualPromptCheckBox"));
+    auto *maxContextItems = page.findChild<QSpinBox *>(QStringLiteral("maxContextItemsSpinBox"));
+    auto *openTabs = page.findChild<QCheckBox *>(QStringLiteral("openTabsContextCheckBox"));
+    auto *relatedFiles = page.findChild<QCheckBox *>(QStringLiteral("relatedFilesContextCheckBox"));
+    auto *relatedFilesMaxFiles = page.findChild<QSpinBox *>(QStringLiteral("relatedFilesMaxFilesSpinBox"));
+    auto *excludePatterns = page.findChild<QLineEdit *>(QStringLiteral("contextExcludePatternsEdit"));
+
+    QVERIFY(contextualPrompt);
+    QVERIFY(maxContextItems);
+    QVERIFY(openTabs);
+    QVERIFY(relatedFiles);
+    QVERIFY(relatedFilesMaxFiles);
+    QVERIFY(excludePatterns);
+
+    contextualPrompt->setChecked(false);
+    QVERIFY(!maxContextItems->isEnabled());
+    QVERIFY(!openTabs->isEnabled());
+    QVERIFY(!relatedFiles->isEnabled());
+    QVERIFY(!relatedFilesMaxFiles->isEnabled());
+    QVERIFY(!excludePatterns->isEnabled());
+
+    contextualPrompt->setChecked(true);
+    relatedFiles->setChecked(false);
+    QVERIFY(maxContextItems->isEnabled());
+    QVERIFY(openTabs->isEnabled());
+    QVERIFY(relatedFiles->isEnabled());
+    QVERIFY(!relatedFilesMaxFiles->isEnabled());
+    QVERIFY(!excludePatterns->isEnabled());
+
+    relatedFiles->setChecked(true);
+    QVERIFY(relatedFilesMaxFiles->isEnabled());
+    QVERIFY(excludePatterns->isEnabled());
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()

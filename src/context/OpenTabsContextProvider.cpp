@@ -7,6 +7,7 @@
 
 #include "context/OpenTabsContextProvider.h"
 
+#include "context/ContextFileFilter.h"
 #include "context/ProjectContextResolver.h"
 
 #include <KTextEditor/Document>
@@ -36,14 +37,6 @@ constexpr int kMaxTotalSnippetChars = 3000;
     }
 
     return doc->documentName();
-}
-
-[[nodiscard]] bool isPrivateLookingPath(const QString &path)
-{
-    const QString p = path.toLower();
-    return p.contains(QStringLiteral("/.env")) || p.endsWith(QStringLiteral(".env")) || p.contains(QStringLiteral("secret"))
-        || p.contains(QStringLiteral("token")) || p.contains(QStringLiteral("credential")) || p.contains(QStringLiteral("password"))
-        || p.contains(QStringLiteral("private"));
 }
 
 [[nodiscard]] ContextItem snippetItem(const QString &providerId,
@@ -118,7 +111,9 @@ QVector<ContextItem> OpenTabsContextProvider::resolve(const ContextResolveReques
             continue;
         }
 
-        if (isPrivateLookingPath(uri) || isPrivateLookingPath(localPath)) {
+        ContextFileFilterOptions filterOptions;
+        const QString filterPath = localPath.isEmpty() ? uri : localPath;
+        if (!ContextFileFilter::isAllowedPath(filterPath, filterOptions)) {
             continue;
         }
 
