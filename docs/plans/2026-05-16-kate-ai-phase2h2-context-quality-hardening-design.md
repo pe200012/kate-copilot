@@ -161,3 +161,11 @@ Add `KateAiConfigPage::updateContextControlsUi()`:
 
 - DiagnosticsAdapter currently converts Kate LSP line marks into generic diagnostic messages. Full LSP diagnostic messages remain unavailable through stable public KTextEditor APIs.
 - User `ContextExcludePatterns` still directly apply to related files; open-tabs and recent-edits use the shared built-in filter rules in this phase.
+
+### Crash hardening follow-up on 2026-06-01
+
+- Root cause: production coredumps showed a timer-driven `DiagnosticsAdapter` rescan reaching `KParts::ReadOnlyPart::url()` through `uriForDocument(document)`. Runtime logs also showed Qt warnings from `Qt::UniqueConnection` applied to lambdas/functors.
+- Design adjustment: `DiagnosticsAdapter` now keeps tracked documents as guarded `QPointer<KTextEditor::Document>` entries with a last-known URI. `aboutToClose` and `destroyed` paths remove the document and clear owned diagnostics through the cached URI, so cleanup avoids reading URL state from a closing object.
+- Connection adjustment: lambda/functor connections use normal tracked `QMetaObject::Connection` handles. `Qt::UniqueConnection` remains on member-function connections where Qt supports uniqueness.
+- Tests added in `autotests/DiagnosticsAdapterTest.cpp`: one test fails on the previous invalid UniqueConnection warning and confirms LSP diagnostics reach `DiagnosticStore`; another destroys a tracked document before a pending rescan and verifies owned diagnostics are cleared.
+- Verification: `cmake --build build --target kateaiinlinecompletion_diagnostics_adapter_test -j 8 && ctest --test-dir build --output-on-failure -R kateaiinlinecompletion_diagnostics_adapter_test` passed 1/1, then `cmake --build build -j 8 && ctest --test-dir build --output-on-failure` passed 26/26.

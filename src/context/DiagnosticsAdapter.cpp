@@ -54,6 +54,7 @@ DiagnosticsAdapter::DiagnosticsAdapter(QObject *parent)
 
 void DiagnosticsAdapter::attach(KTextEditor::MainWindow *mainWindow, DiagnosticStore *store)
 {
+    m_rescanTimer.stop();
     disconnectTrackedConnections();
     clearOwnedDiagnostics();
     m_documents.clear();
@@ -71,12 +72,12 @@ void DiagnosticsAdapter::attach(KTextEditor::MainWindow *mainWindow, DiagnosticS
             connectLspDiagnosticProviderSignals(pluginView);
             scheduleRescan();
         }
-    }, Qt::UniqueConnection));
+    }));
     m_connections.push_back(connect(m_mainWindow.data(), &KTextEditor::MainWindow::pluginViewDeleted, this, [this](const QString &name, QObject *) {
         if (name.contains(QStringLiteral("lspclient"), Qt::CaseInsensitive)) {
             scheduleRescan();
         }
-    }, Qt::UniqueConnection));
+    }));
 
     for (KTextEditor::View *view : m_mainWindow->views()) {
         trackView(view);
@@ -149,24 +150,48 @@ void DiagnosticsAdapter::trackDocument(KTextEditor::Document *document)
         return;
     }
 
-    m_documents.insert(document);
+    m_documents.insert(document, TrackedDocument{QPointer<KTextEditor::Document>(document), uriForDocument(document)});
     m_connections.push_back(connect(document, &KTextEditor::Document::marksChanged, this, [this](KTextEditor::Document *) {
         scheduleRescan();
-    }, Qt::UniqueConnection));
-    m_connections.push_back(connect(document, &KTextEditor::Document::documentUrlChanged, this, [this](KTextEditor::Document *) {
+    }));
+    m_connections.push_back(connect(document, &KTextEditor::Document::documentUrlChanged, this, [this](KTextEditor::Document *changedDocument) {
+        updateTrackedDocumentUri(changedDocument);
         scheduleRescan();
-    }, Qt::UniqueConnection));
+    }));
     m_connections.push_back(connect(document, &KTextEditor::Document::aboutToClose, this, [this, document](KTextEditor::Document *) {
-        const QString uri = uriForDocument(document);
-        if (m_store && !uri.isEmpty() && m_ownedUris.contains(uri)) {
-            m_store->clearDiagnostics(uri);
-            m_ownedUris.remove(uri);
-        }
-        m_documents.remove(document);
-    }, Qt::UniqueConnection));
+        forgetDocument(document);
+    }));
     m_connections.push_back(connect(document, &QObject::destroyed, this, [this, document] {
-        m_documents.remove(document);
-    }, Qt::UniqueConnection));
+        forgetDocument(document);
+    }));
+}
+
+void DiagnosticsAdapter::forgetDocument(KTextEditor::Document *document)
+{
+    auto it = m_documents.find(document);
+    if (it == m_documents.end()) {
+        return;
+    }
+
+    const QString uri = it.value().uri;
+    m_documents.erase(it);
+    clearOwnedDiagnosticsForUri(uri);
+}
+
+void DiagnosticsAdapter::updateTrackedDocumentUri(KTextEditor::Document *document)
+{
+    auto it = m_documents.find(document);
+    if (it == m_documents.end() || !it.value().document) {
+        return;
+    }
+
+    const QString newUri = uriForDocument(it.value().document.data());
+    if (newUri == it.value().uri) {
+        return;
+    }
+
+    clearOwnedDiagnosticsForUri(it.value().uri);
+    it.value().uri = newUri;
 }
 
 void DiagnosticsAdapter::connectLspDiagnosticProviderSignals(QObject *pluginView)
@@ -180,7 +205,7 @@ void DiagnosticsAdapter::connectLspDiagnosticProviderSignals(QObject *pluginView
         m_connections.push_back(connect(provider, &QObject::destroyed, this, [this, provider] {
             m_connectedDiagnosticProviders.remove(provider);
             scheduleRescan();
-        }, Qt::UniqueConnection));
+        }));
 
         const QMetaObject *meta = provider->metaObject();
         const int slotIndex = metaObject()->indexOfSlot("scheduleRescan()");
@@ -213,25 +238,34 @@ void DiagnosticsAdapter::rescanOpenDocuments()
         trackView(view);
     }
 
-    for (KTextEditor::Document *document : std::as_const(m_documents)) {
+    auto it = m_documents.begin();
+    while (it != m_documents.end()) {
+        KTextEditor::Document *document = it.value().document.data();
         if (!document) {
+            const QString uri = it.value().uri;
+            it = m_documents.erase(it);
+            clearOwnedDiagnosticsForUri(uri);
             continue;
         }
         const QString uri = uriForDocument(document);
         if (uri.isEmpty()) {
+            ++it;
             continue;
+        }
+        if (uri != it.value().uri) {
+            clearOwnedDiagnosticsForUri(it.value().uri);
+            it.value().uri = uri;
         }
         seenUris.insert(uri);
         const QVector<DiagnosticItem> diagnostics = diagnosticsFromLspMarks(document);
         if (diagnostics.isEmpty()) {
-            if (m_ownedUris.contains(uri)) {
-                m_store->clearDiagnostics(uri);
-                m_ownedUris.remove(uri);
-            }
+            clearOwnedDiagnosticsForUri(uri);
+            ++it;
             continue;
         }
         m_store->setDiagnostics(uri, diagnostics);
         m_ownedUris.insert(uri);
+        ++it;
     }
 
     const QSet<QString> previousUris = m_ownedUris;
@@ -255,6 +289,18 @@ void DiagnosticsAdapter::clearOwnedDiagnostics()
         m_store->clearDiagnostics(uri);
     }
     m_ownedUris.clear();
+}
+
+void DiagnosticsAdapter::clearOwnedDiagnosticsForUri(const QString &uri)
+{
+    if (uri.isEmpty() || !m_ownedUris.contains(uri)) {
+        return;
+    }
+
+    if (m_store) {
+        m_store->clearDiagnostics(uri);
+    }
+    m_ownedUris.remove(uri);
 }
 
 void DiagnosticsAdapter::disconnectTrackedConnections()

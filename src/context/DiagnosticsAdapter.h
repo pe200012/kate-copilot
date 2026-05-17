@@ -11,6 +11,7 @@
 
 #include "context/DiagnosticItem.h"
 
+#include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QSet>
@@ -44,18 +45,26 @@ private Q_SLOTS:
     void scheduleRescan();
 
 private:
+    struct TrackedDocument {
+        QPointer<KTextEditor::Document> document;
+        QString uri;
+    };
+
     void trackView(KTextEditor::View *view);
     void trackDocument(KTextEditor::Document *document);
+    void forgetDocument(KTextEditor::Document *document);
+    void updateTrackedDocumentUri(KTextEditor::Document *document);
     void connectLspDiagnosticProviderSignals(QObject *pluginView);
     void rescanOpenDocuments();
     void clearOwnedDiagnostics();
+    void clearOwnedDiagnosticsForUri(const QString &uri);
     void disconnectTrackedConnections();
 
     [[nodiscard]] bool lspDiagnosticsAvailable() const;
 
     QPointer<KTextEditor::MainWindow> m_mainWindow;
     QPointer<DiagnosticStore> m_store;
-    QSet<KTextEditor::Document *> m_documents;
+    QHash<KTextEditor::Document *, TrackedDocument> m_documents;
     QSet<QObject *> m_connectedDiagnosticProviders;
     QVector<QMetaObject::Connection> m_connections;
     QSet<QString> m_ownedUris;
