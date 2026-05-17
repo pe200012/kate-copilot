@@ -13,6 +13,7 @@
 #include "context/DiagnosticsAdapter.h"
 #include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
+#include "session/CompletionCache.h"
 #include "session/EditorSession.h"
 #include "settings/KWalletSecretStore.h"
 
@@ -26,6 +27,34 @@
 #include <QAction>
 #include <QKeySequence>
 #include <QNetworkAccessManager>
+#include <QUrl>
+
+namespace
+{
+KateAiInlineCompletion::CompletionCacheOptions completionCacheOptionsFromSettings(const KateAiInlineCompletion::CompletionSettings &settings)
+{
+    KateAiInlineCompletion::CompletionCacheOptions options;
+    options.enabled = settings.enableCompletionCache;
+    options.maxEntries = settings.completionCacheMaxEntries;
+    options.ttlMs = settings.completionCacheTtlMs;
+    options.prefixTailChars = settings.completionCachePrefixTailChars;
+    options.suffixHeadChars = settings.completionCacheSuffixHeadChars;
+    return options;
+}
+
+QString completionCacheSettingsSignature(const KateAiInlineCompletion::CompletionSettings &settings)
+{
+    return QStringLiteral("%1\u001f%2\u001f%3\u001f%4\u001f%5\u001f%6\u001f%7\u001f%8")
+        .arg(settings.enableCompletionCache ? QStringLiteral("1") : QStringLiteral("0"),
+             settings.provider,
+             settings.model,
+             settings.promptTemplate,
+             settings.endpoint.toString(QUrl::RemoveUserInfo),
+             settings.copilotNwo,
+             QString::number(settings.completionCachePrefixTailChars),
+             QString::number(settings.completionCacheSuffixHeadChars));
+}
+} // namespace
 
 KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineCompletionPlugin *plugin, KTextEditor::MainWindow *mainWindow)
     : QObject(mainWindow)
@@ -39,9 +68,11 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     m_copilotAuthManager = new KateAiInlineCompletion::CopilotAuthManager(m_secretStore, m_networkManager, this);
     m_recentEditsTracker = new KateAiInlineCompletion::RecentEditsTracker(this);
     m_diagnosticStore = new KateAiInlineCompletion::DiagnosticStore(this);
+    m_completionCache = std::make_unique<KateAiInlineCompletion::CompletionCache>();
     m_diagnosticsAdapter = new KateAiInlineCompletion::DiagnosticsAdapter(this);
     m_diagnosticsAdapter->attach(m_mainWindow, m_diagnosticStore);
     applyRecentEditsSettings();
+    applyCompletionCacheSettings();
 
     setupActions();
     if (KXMLGUIFactory *factory = m_mainWindow->guiFactory()) {
@@ -51,6 +82,7 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
     connect(m_mainWindow, &KTextEditor::MainWindow::viewChanged, this, &KateAiInlineCompletionPluginView::onViewChanged);
     connect(m_plugin, &KateAiInlineCompletionPlugin::settingsChanged, this, [this] {
         applyRecentEditsSettings();
+        applyCompletionCacheSettings();
         trackKnownDocuments();
     });
 
@@ -109,6 +141,23 @@ void KateAiInlineCompletionPluginView::applyRecentEditsSettings()
     if (!settings.enableRecentEditsContext) {
         m_recentEditsTracker->clear();
     }
+}
+
+void KateAiInlineCompletionPluginView::applyCompletionCacheSettings()
+{
+    if (!m_plugin || !m_completionCache) {
+        return;
+    }
+
+    const KateAiInlineCompletion::CompletionSettings settings = m_plugin->settings().validated();
+    const QString signature = completionCacheSettingsSignature(settings);
+    const bool identityChanged = !m_completionCacheSettingsSignature.isEmpty() && m_completionCacheSettingsSignature != signature;
+
+    m_completionCache->setOptions(completionCacheOptionsFromSettings(settings));
+    if (identityChanged) {
+        m_completionCache->clear();
+    }
+    m_completionCacheSettingsSignature = signature;
 }
 
 void KateAiInlineCompletionPluginView::trackKnownDocuments()
@@ -201,6 +250,7 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
                                                              m_copilotAuthManager,
                                                              m_recentEditsTracker,
                                                              m_diagnosticStore,
+                                                             m_completionCache.get(),
                                                              view);
     m_sessions.insert(view, session);
 

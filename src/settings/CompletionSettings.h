@@ -66,6 +66,14 @@ struct CompletionSettings {
     static constexpr int kStrategyMaxTokensMax = 1024;
     static constexpr double kCompletionTemperatureMin = 0.0;
     static constexpr double kCompletionTemperatureMax = 1.5;
+    static constexpr int kCompletionCacheMaxEntriesMin = 0;
+    static constexpr int kCompletionCacheMaxEntriesMax = 1000;
+    static constexpr int kCompletionCacheTtlMinMs = 1000;
+    static constexpr int kCompletionCacheTtlMaxMs = 600000;
+    static constexpr int kCompletionCachePrefixTailCharsMin = 100;
+    static constexpr int kCompletionCachePrefixTailCharsMax = 10000;
+    static constexpr int kCompletionCacheSuffixHeadCharsMin = 0;
+    static constexpr int kCompletionCacheSuffixHeadCharsMax = 5000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -123,6 +131,13 @@ struct CompletionSettings {
     int afterAcceptMaxTokens = 96;
     double completionTemperature = 0.2;
     bool singleLineStopAtNewline = true;
+
+    bool enableCompletionCache = true;
+    int completionCacheMaxEntries = 128;
+    int completionCacheTtlMs = 120000;
+    int completionCachePrefixTailChars = 1200;
+    int completionCacheSuffixHeadChars = 600;
+    bool enableTypingAsSuggested = true;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

@@ -77,6 +77,13 @@ void CompletionSettingsTest::defaultsAreValid()
     QCOMPARE(d.completionTemperature, 0.2);
     QVERIFY(d.singleLineStopAtNewline);
 
+    QVERIFY(d.enableCompletionCache);
+    QCOMPARE(d.completionCacheMaxEntries, 128);
+    QCOMPARE(d.completionCacheTtlMs, 120000);
+    QCOMPARE(d.completionCachePrefixTailChars, 1200);
+    QCOMPARE(d.completionCacheSuffixHeadChars, 600);
+    QVERIFY(d.enableTypingAsSuggested);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -112,6 +119,10 @@ void CompletionSettingsTest::validationClampsBounds()
     s.manualMultilineMaxTokens = 999999;
     s.afterAcceptMaxTokens = 1;
     s.completionTemperature = 99.0;
+    s.completionCacheMaxEntries = 999999;
+    s.completionCacheTtlMs = 1;
+    s.completionCachePrefixTailChars = 1;
+    s.completionCacheSuffixHeadChars = 999999;
     s.contextExcludePatterns = {QStringLiteral(" *.tmp "), QString(), QStringLiteral("build/generated/*")};
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
@@ -145,6 +156,10 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.manualMultilineMaxTokens, CompletionSettings::kStrategyMaxTokensMax);
     QCOMPARE(v.afterAcceptMaxTokens, CompletionSettings::kStrategyMaxTokensMin);
     QCOMPARE(v.completionTemperature, CompletionSettings::kCompletionTemperatureMax);
+    QCOMPARE(v.completionCacheMaxEntries, CompletionSettings::kCompletionCacheMaxEntriesMax);
+    QCOMPARE(v.completionCacheTtlMs, CompletionSettings::kCompletionCacheTtlMinMs);
+    QCOMPARE(v.completionCachePrefixTailChars, CompletionSettings::kCompletionCachePrefixTailCharsMin);
+    QCOMPARE(v.completionCacheSuffixHeadChars, CompletionSettings::kCompletionCacheSuffixHeadCharsMax);
     QCOMPARE(v.contextExcludePatterns, QStringList({QStringLiteral("*.tmp"), QStringLiteral("build/generated/*")}));
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
@@ -215,6 +230,12 @@ void CompletionSettingsTest::roundTripConfig()
     in.afterAcceptMaxTokens = 44;
     in.completionTemperature = 0.7;
     in.singleLineStopAtNewline = false;
+    in.enableCompletionCache = false;
+    in.completionCacheMaxEntries = 77;
+    in.completionCacheTtlMs = 45000;
+    in.completionCachePrefixTailChars = 900;
+    in.completionCacheSuffixHeadChars = 300;
+    in.enableTypingAsSuggested = false;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -263,6 +284,12 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.afterAcceptMaxTokens, in.afterAcceptMaxTokens);
     QCOMPARE(out.completionTemperature, in.completionTemperature);
     QCOMPARE(out.singleLineStopAtNewline, in.singleLineStopAtNewline);
+    QCOMPARE(out.enableCompletionCache, in.enableCompletionCache);
+    QCOMPARE(out.completionCacheMaxEntries, in.completionCacheMaxEntries);
+    QCOMPARE(out.completionCacheTtlMs, in.completionCacheTtlMs);
+    QCOMPARE(out.completionCachePrefixTailChars, in.completionCachePrefixTailChars);
+    QCOMPARE(out.completionCacheSuffixHeadChars, in.completionCacheSuffixHeadChars);
+    QCOMPARE(out.enableTypingAsSuggested, in.enableTypingAsSuggested);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

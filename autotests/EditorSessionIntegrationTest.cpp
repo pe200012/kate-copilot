@@ -9,6 +9,7 @@
 #include "context/RecentEditsTracker.h"
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "render/GhostTextOverlayWidget.h"
+#include "session/CompletionCache.h"
 #include "session/EditorSession.h"
 #include "settings/CompletionSettings.h"
 
@@ -32,6 +33,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+using KateAiInlineCompletion::CompletionCache;
 using KateAiInlineCompletion::CompletionSettings;
 using KateAiInlineCompletion::DiagnosticStore;
 using KateAiInlineCompletion::EditorSession;
@@ -90,10 +92,10 @@ public:
                             socket->write(frame);
                             socket->flush();
                         });
-                        delayMs += 25;
+                        delayMs += m_frameDelayMs;
                     }
 
-                    QTimer::singleShot(delayMs + 25, socket, [socket] {
+                    QTimer::singleShot(delayMs + m_frameDelayMs, socket, [socket] {
                         if (!socket->isOpen()) {
                             return;
                         }
@@ -112,23 +114,35 @@ public:
 
     void setCompletion(const QString &text)
     {
-        QJsonObject delta;
-        delta[QStringLiteral("content")] = text;
-
-        QJsonObject choice;
-        choice[QStringLiteral("delta")] = delta;
-        choice[QStringLiteral("finish_reason")] = QJsonValue();
-
-        QJsonArray choices;
-        choices.append(choice);
-
-        QJsonObject obj;
-        obj[QStringLiteral("choices")] = choices;
-
-        const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-        const QByteArray frame = QByteArray("data: ") + payload + QByteArray("\n\n");
-        m_frames = {frame, QByteArray("data: [DONE]\n\n")};
+        setCompletionFrames({text});
     }
+
+    void setCompletionFrames(const QStringList &texts, int frameDelayMs = 25)
+    {
+        QList<QByteArray> frames;
+        for (const QString &text : texts) {
+            QJsonObject delta;
+            delta[QStringLiteral("content")] = text;
+
+            QJsonObject choice;
+            choice[QStringLiteral("delta")] = delta;
+            choice[QStringLiteral("finish_reason")] = QJsonValue();
+
+            QJsonArray choices;
+            choices.append(choice);
+
+            QJsonObject obj;
+            obj[QStringLiteral("choices")] = choices;
+
+            const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+            frames.push_back(QByteArray("data: ") + payload + QByteArray("\n\n"));
+        }
+        frames.push_back(QByteArray("data: [DONE]\n\n"));
+
+        m_frames = frames;
+        m_frameDelayMs = frameDelayMs;
+    }
+
 
     QUrl endpoint() const
     {
@@ -151,6 +165,7 @@ private:
     QHash<QTcpSocket *, QByteArray> m_requestBuffer;
     QByteArray m_lastRequestBody;
     QList<QByteArray> m_frames;
+    int m_frameDelayMs = 25;
     int m_requestCount = 0;
 };
 
@@ -162,6 +177,7 @@ struct SessionHarness {
     KTextEditor::View *view = nullptr;
     KateAiInlineCompletionPlugin plugin;
     QNetworkAccessManager manager;
+    CompletionCache completionCache;
     RecentEditsTracker recentEditsTracker;
     DiagnosticStore diagnosticStore;
     EditorSession *session = nullptr;
@@ -198,7 +214,7 @@ struct SessionHarness {
         plugin.setSettings(settings);
 
         recentEditsTracker.trackDocument(doc.data(), QStringLiteral("/tmp/editor-session.cpp"));
-        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, view);
+        session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, &completionCache, view);
         overlay = view->editorWidget()->findChild<GhostTextOverlayWidget *>();
         Q_ASSERT(overlay);
 
@@ -233,6 +249,10 @@ private Q_SLOTS:
     void promptContextSlotsExcludeCurrentFileMetadataTraits();
     void requestUsesCompletionStrategySettings();
     void afterAcceptRequestUsesAfterAcceptStrategy();
+    void typingPrefixOfVisibleSuggestionKeepsRemainingSuggestionWithoutRequest();
+    void typingDuringStreamingKeepsRequestAndUsesLaterDeltas();
+    void typingNonmatchingTextClearsSuggestionAndSchedulesRequest();
+    void cachedSuggestionCanBeShownWithoutProviderRequest();
     void tabAcceptsStreamedSuggestion();
     void tabAcceptsSuggestionWithRestOfLineOverlap();
     void escapeClearsStreamedSuggestion();
@@ -395,6 +415,83 @@ void EditorSessionIntegrationTest::afterAcceptRequestUsesAfterAcceptStrategy()
     QVERIFY(document.isObject());
     const QJsonObject payload = document.object();
     QCOMPARE(payload.value(QStringLiteral("max_tokens")).toInt(), 55);
+}
+
+void EditorSessionIntegrationTest::typingPrefixOfVisibleSuggestionKeepsRemainingSuggestionWithoutRequest()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost\nline"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.overlay->isActive(), 2000);
+    const int initialRequests = server.requestCount();
+
+    harness.view->editorWidget()->setFocus();
+    QTest::keyClicks(harness.view->editorWidget(), QStringLiteral("ghost"));
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixghostSUFFIX")), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("\nline"), 2000);
+    QTest::qWait(CompletionSettings::kDebounceMinMs * 3);
+    QCOMPARE(server.requestCount(), initialRequests);
+}
+
+void EditorSessionIntegrationTest::typingDuringStreamingKeepsRequestAndUsesLaterDeltas()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletionFrames({QStringLiteral("ghost"), QStringLiteral("\nTail")}, 250);
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+    const int initialRequests = server.requestCount();
+
+    harness.view->editorWidget()->setFocus();
+    QTest::keyClicks(harness.view->editorWidget(), QStringLiteral("ghost"));
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixghostSUFFIX")), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("\nTail"), 3000);
+    QCOMPARE(server.requestCount(), initialRequests);
+}
+
+void EditorSessionIntegrationTest::typingNonmatchingTextClearsSuggestionAndSchedulesRequest()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("ghost\nline"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+    const int initialRequests = server.requestCount();
+
+    harness.view->editorWidget()->setFocus();
+    QTest::keyClick(harness.view->editorWidget(), Qt::Key_X);
+
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > initialRequests, 2000);
+}
+
+void EditorSessionIntegrationTest::cachedSuggestionCanBeShownWithoutProviderRequest()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletion(QStringLiteral("cachedGhost"));
+
+    SessionHarness harness(server.endpoint());
+    waitForSuggestion(server, harness.view, harness.session);
+    QTRY_COMPARE_WITH_TIMEOUT(server.requestCount(), 1, 2000);
+    QTest::qWait(100);
+
+    harness.session->dismissSuggestion();
+    QVERIFY(!harness.session->hasVisibleSuggestion());
+
+    harness.session->triggerSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTest::qWait(CompletionSettings::kDebounceMinMs * 3);
+    QCOMPARE(server.requestCount(), 1);
 }
 
 void EditorSessionIntegrationTest::tabAcceptsStreamedSuggestion()

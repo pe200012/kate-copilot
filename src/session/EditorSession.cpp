@@ -36,15 +36,18 @@
 #include <KTextEditor/MainWindow>
 #include <KTextEditor/View>
 
+#include <QClipboard>
+#include <QDateTime>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QNetworkAccessManager>
 #include <QVariantMap>
 #include <QWidget>
 
 #include <limits>
 #include <memory>
-#include <utility>
 #include <utility>
 
 namespace KateAiInlineCompletion
@@ -241,6 +244,23 @@ static void appendStrategyStopSequences(QStringList &target, const QStringList &
     }
 }
 
+static QString textInsertedByKeyEvent(const QKeyEvent *event)
+{
+    if (!event) {
+        return {};
+    }
+
+    if (event->matches(QKeySequence::Paste)) {
+        return QGuiApplication::clipboard() ? QGuiApplication::clipboard()->text() : QString();
+    }
+
+    if (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
+        return {};
+    }
+
+    return event->text();
+}
+
 static SuggestionProcessingContext suggestionProcessingContext(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
 {
     SuggestionProcessingContext ctx;
@@ -261,6 +281,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
                              CopilotAuthManager *copilotAuthManager,
                              RecentEditsTracker *recentEditsTracker,
                              DiagnosticStore *diagnosticStore,
+                             CompletionCache *completionCache,
                              QObject *parent)
     : QObject(parent)
     , m_view(view)
@@ -270,6 +291,7 @@ EditorSession::EditorSession(KTextEditor::View *view,
     , m_copilotAuthManager(copilotAuthManager)
     , m_recentEditsTracker(recentEditsTracker)
     , m_diagnosticStore(diagnosticStore)
+    , m_completionCache(completionCache)
 {
     m_debounceTimer.setSingleShot(true);
     connect(&m_debounceTimer, &QTimer::timeout, this, &EditorSession::onDebounceTimeout);
@@ -382,13 +404,21 @@ bool EditorSession::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
 
+    const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
+    const QString insertedText = textInsertedByKeyEvent(keyEvent);
+    if (settings.enableTypingAsSuggested && !insertedText.isEmpty() && m_state.visibleText.startsWith(insertedText)) {
+        m_pendingTypingReuseText = insertedText;
+    } else {
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
+    }
+
     return QObject::eventFilter(watched, event);
 }
 
 void EditorSession::onTextInserted(KTextEditor::View *view, KTextEditor::Cursor position, const QString &text)
 {
     Q_UNUSED(position);
-    Q_UNUSED(text);
 
     if (view != m_view) {
         return;
@@ -396,6 +426,10 @@ void EditorSession::onTextInserted(KTextEditor::View *view, KTextEditor::Cursor 
 
     if (m_ignoreNextViewSignals > 0) {
         --m_ignoreNextViewSignals;
+        return;
+    }
+
+    if (tryReuseVisibleSuggestionForTypedText(text)) {
         return;
     }
 
@@ -415,6 +449,17 @@ void EditorSession::onCursorPositionChanged(KTextEditor::View *view, KTextEditor
         --m_ignoreNextViewSignals;
         return;
     }
+
+    if (!m_pendingTypingReuseText.isEmpty() && hasVisibleSuggestion()) {
+        m_skippedCursorMoveBeforeTextInsert = true;
+        return;
+    }
+
+    if (m_ignoreNextCursorMoveAfterTypingReuse && hasVisibleSuggestion()) {
+        m_ignoreNextCursorMoveAfterTypingReuse = false;
+        return;
+    }
+    m_ignoreNextCursorMoveAfterTypingReuse = false;
 
     bumpGeneration();
     scheduleCompletion();
@@ -475,17 +520,8 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
     const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
     const ProcessedSuggestion processed = SuggestionPostProcessor::process(textToProcess, suggestionProcessingContext(doc, anchorCursor));
 
-    if (processed.valid) {
-        m_state.visibleText = processed.displayText;
-        m_state.insertText = processed.insertText;
-        m_state.replaceRange = processed.replaceRange;
-        m_state.suffixCoverage = processed.suffixCoverage;
-    } else {
-        m_state.visibleText.clear();
-        m_state.insertText.clear();
-        m_state.replaceRange = KTextEditor::Range::invalid();
-        m_state.suffixCoverage = 0;
-    }
+    const bool valid = applyProcessedSuggestion(processed);
+    m_suggestionSource = valid ? SuggestionSource::Network : SuggestionSource::None;
 
     applyStateToOverlay();
 }
@@ -503,6 +539,17 @@ void EditorSession::onRequestFinished(quint64 requestId)
 
     m_activeRequestId = 0;
     m_state.streaming = false;
+
+    if (m_completionCache && m_hasActiveCacheKey && m_suggestionSource == SuggestionSource::Network && !m_rawSuggestionText.isEmpty()
+        && !m_state.visibleText.isEmpty() && !m_state.insertText.isEmpty()) {
+        CompletionCacheValue value;
+        value.rawCompletion = m_rawSuggestionText;
+        value.processedInsertText = m_state.insertText;
+        value.processedDisplayText = m_state.visibleText;
+        value.suffixCoverage = m_state.suffixCoverage;
+        value.createdAt = QDateTime::currentDateTimeUtc();
+        m_completionCache->insert(m_activeCacheKey, value);
+    }
 
     applyStateToOverlay();
 }
@@ -542,12 +589,92 @@ void EditorSession::onDocumentTextChanged(KTextEditor::Document *document)
     applyStateToOverlay();
 }
 
+bool EditorSession::applyProcessedSuggestion(const ProcessedSuggestion &processed)
+{
+    if (processed.valid) {
+        m_state.visibleText = processed.displayText;
+        m_state.insertText = processed.insertText;
+        m_state.replaceRange = processed.replaceRange;
+        m_state.suffixCoverage = processed.suffixCoverage;
+        return true;
+    }
+
+    m_state.visibleText.clear();
+    m_state.insertText.clear();
+    m_state.replaceRange = KTextEditor::Range::invalid();
+    m_state.suffixCoverage = 0;
+    return false;
+}
+
+bool EditorSession::tryReuseVisibleSuggestionForTypedText(const QString &text)
+{
+    const QString typedText = text.isEmpty() ? m_pendingTypingReuseText : text;
+
+    if (!m_view || !m_plugin) {
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
+        return false;
+    }
+
+    const CompletionSettings settings = m_plugin->settings().validated();
+    if (!settings.enableTypingAsSuggested) {
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
+        return false;
+    }
+
+    if (typedText.isEmpty() || !hasVisibleSuggestion()) {
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
+        return false;
+    }
+
+    if (!m_state.visibleText.startsWith(typedText)) {
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
+        return false;
+    }
+
+    if (m_activeRequestId == 0) {
+        m_state.streaming = false;
+    }
+
+    m_acceptedFromSuggestion += typedText;
+    m_typedPrefixFromSuggestion += typedText;
+
+    if (!syncAnchorFromTracker()) {
+        clearSuggestion();
+        return true;
+    }
+
+    KTextEditor::Document *doc = m_view->document();
+    const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
+    if (!full.startsWith(m_acceptedFromSuggestion)) {
+        bumpGeneration();
+        scheduleCompletion();
+        return true;
+    }
+
+    const QString remaining = full.mid(m_acceptedFromSuggestion.size());
+    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
+    const ProcessedSuggestion processed = SuggestionPostProcessor::process(remaining, suggestionProcessingContext(doc, anchorCursor));
+    const bool stillVisible = applyProcessedSuggestion(processed);
+    m_suggestionSource = stillVisible ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
+    m_ignoreNextCursorMoveAfterTypingReuse = !m_skippedCursorMoveBeforeTextInsert;
+    m_skippedCursorMoveBeforeTextInsert = false;
+    m_pendingTypingReuseText.clear();
+
+    applyStateToOverlay();
+    return true;
+}
+
 void EditorSession::bumpGeneration()
 {
     ++m_generation;
     m_nextRequestManualTrigger = false;
     m_nextRequestAfterPartialAccept = false;
     m_nextRequestAfterFullAccept = false;
+    m_ignoreNextCursorMoveAfterTypingReuse = false;
 
     if (m_activeRequestId != 0 && m_provider) {
         m_provider->cancel(m_activeRequestId);
@@ -656,8 +783,6 @@ void EditorSession::startRequest()
     promptCtx.prefix = prefix;
     promptCtx.suffix = suffix;
 
-    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
-    const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
     const CompletionStrategy strategy = CompletionStrategyEngine::choose(completionStrategyRequestFromDocument(doc,
                                                                                                                cursor,
                                                                                                                settings,
@@ -669,6 +794,42 @@ void EditorSession::startRequest()
                                                                                                                afterPartialAccept,
                                                                                                                afterFullAccept),
                                                                          settings);
+    const bool cacheEnabled = settings.enableCompletionCache && m_completionCache;
+    const CompletionCacheKey cacheKey = CompletionCache::makeKey(settings, strategy, promptCtx, prefix, suffix);
+
+    if (cacheEnabled) {
+        const std::optional<CompletionCacheValue> cached = m_completionCache->lookupExact(cacheKey);
+        if (cached.has_value()) {
+            const ProcessedSuggestion processed = SuggestionPostProcessor::process(cached->rawCompletion, suggestionProcessingContext(doc, cursor));
+            if (processed.valid) {
+                if (m_activeRequestId != 0) {
+                    m_provider->cancel(m_activeRequestId);
+                    m_activeRequestId = 0;
+                }
+
+                m_anchorTracker.attach(doc, cursor);
+                m_state.anchor.generation = m_generation;
+                m_state.anchorTracked = m_anchorTracker.isValid();
+                (void)syncAnchorFromTracker();
+
+                m_rawSuggestionText = cached->rawCompletion;
+                m_acceptedFromSuggestion.clear();
+                m_typedPrefixFromSuggestion.clear();
+                m_activeCacheKey = cacheKey;
+                m_hasActiveCacheKey = true;
+                m_state.streaming = false;
+                m_state.suppressed = false;
+                (void)applyProcessedSuggestion(processed);
+                m_suggestionSource = SuggestionSource::Cache;
+
+                applyStateToOverlay();
+                return;
+            }
+        }
+    }
+
+    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
+    const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
 
     CompletionRequest request;
     request.endpoint = endpoint;
@@ -718,6 +879,10 @@ void EditorSession::startRequest()
     m_state.suffixCoverage = 0;
     m_rawSuggestionText.clear();
     m_acceptedFromSuggestion.clear();
+    m_typedPrefixFromSuggestion.clear();
+    m_activeCacheKey = cacheKey;
+    m_hasActiveCacheKey = cacheEnabled;
+    m_suggestionSource = SuggestionSource::Network;
     m_state.streaming = true;
     m_state.suppressed = false;
 
@@ -736,6 +901,12 @@ void EditorSession::clearSuggestion()
     m_state = cleared;
     m_rawSuggestionText.clear();
     m_acceptedFromSuggestion.clear();
+    m_typedPrefixFromSuggestion.clear();
+    m_pendingTypingReuseText.clear();
+    m_skippedCursorMoveBeforeTextInsert = false;
+    m_ignoreNextCursorMoveAfterTypingReuse = false;
+    m_hasActiveCacheKey = false;
+    m_suggestionSource = SuggestionSource::None;
 
     applyStateToOverlay();
 }
@@ -881,17 +1052,8 @@ void EditorSession::acceptPartial(const QString &chunk)
 
     const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
     const ProcessedSuggestion processed = SuggestionPostProcessor::process(remaining, suggestionProcessingContext(doc, anchorCursor));
-    if (processed.valid) {
-        m_state.visibleText = processed.displayText;
-        m_state.insertText = processed.insertText;
-        m_state.replaceRange = processed.replaceRange;
-        m_state.suffixCoverage = processed.suffixCoverage;
-    } else {
-        m_state.visibleText.clear();
-        m_state.insertText.clear();
-        m_state.replaceRange = KTextEditor::Range::invalid();
-        m_state.suffixCoverage = 0;
-    }
+    const bool stillVisible = applyProcessedSuggestion(processed);
+    m_suggestionSource = stillVisible ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
 
     applyStateToOverlay();
 }

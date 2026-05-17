@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "session/CompletionCache.h"
 #include "session/GhostTextState.h"
 #include "session/SuggestionAnchorTracker.h"
 
@@ -40,11 +41,13 @@ namespace KateAiInlineCompletion
 
 class AbstractAIProvider;
 class CopilotAuthManager;
+class CompletionCache;
 class DiagnosticStore;
 class GhostTextInlineNoteProvider;
 class GhostTextOverlayWidget;
 class KWalletSecretStore;
 class RecentEditsTracker;
+struct ProcessedSuggestion;
 
 class EditorSession final : public QObject
 {
@@ -58,6 +61,7 @@ public:
                   CopilotAuthManager *copilotAuthManager,
                   RecentEditsTracker *recentEditsTracker,
                   DiagnosticStore *diagnosticStore,
+                  CompletionCache *completionCache,
                   QObject *parent = nullptr);
 
     ~EditorSession() override;
@@ -97,6 +101,8 @@ private:
     void acceptSuggestion();
 
     void acceptPartial(const QString &chunk);
+    [[nodiscard]] bool tryReuseVisibleSuggestionForTypedText(const QString &text);
+    [[nodiscard]] bool applyProcessedSuggestion(const ProcessedSuggestion &processed);
 
     void setSuppressed(bool suppressed);
 
@@ -126,6 +132,7 @@ private:
     CopilotAuthManager *m_copilotAuthManager = nullptr;
     RecentEditsTracker *m_recentEditsTracker = nullptr;
     DiagnosticStore *m_diagnosticStore = nullptr;
+    CompletionCache *m_completionCache = nullptr;
 
     QPointer<GhostTextOverlayWidget> m_overlay;
     std::unique_ptr<GhostTextInlineNoteProvider> m_inlineNoteProvider;
@@ -139,6 +146,18 @@ private:
     SuggestionAnchorTracker m_anchorTracker;
     QString m_rawSuggestionText;
     QString m_acceptedFromSuggestion;
+    QString m_typedPrefixFromSuggestion;
+    QString m_pendingTypingReuseText;
+    CompletionCacheKey m_activeCacheKey;
+    bool m_hasActiveCacheKey = false;
+
+    enum class SuggestionSource {
+        None,
+        Network,
+        Cache,
+        TypingAsSuggested,
+    };
+    SuggestionSource m_suggestionSource = SuggestionSource::None;
 
     bool m_nextRequestManualTrigger = false;
     bool m_nextRequestAfterPartialAccept = false;
@@ -148,6 +167,8 @@ private:
     quint64 m_activeRequestId = 0;
 
     int m_ignoreNextViewSignals = 0;
+    bool m_ignoreNextCursorMoveAfterTypingReuse = false;
+    bool m_skippedCursorMoveBeforeTextInsert = false;
     bool m_lastSuggestionVisible = false;
 };
 

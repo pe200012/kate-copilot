@@ -18,6 +18,8 @@
 
 #include <QHash>
 
+#include <memory>
+
 class KateAiInlineCompletionPlugin;
 class QAction;
 class QNetworkAccessManager;
@@ -25,6 +27,7 @@ class QNetworkAccessManager;
 namespace KateAiInlineCompletion
 {
 class CopilotAuthManager;
+class CompletionCache;
 class DiagnosticsAdapter;
 class DiagnosticStore;
 class EditorSession;
@@ -51,6 +54,7 @@ private Q_SLOTS:
 private:
     void setupActions();
     void applyRecentEditsSettings();
+    void applyCompletionCacheSettings();
     void trackKnownDocuments();
     void ensureSession(KTextEditor::View *view);
     [[nodiscard]] KateAiInlineCompletion::EditorSession *activeSession() const;
@@ -65,6 +69,8 @@ private:
     KateAiInlineCompletion::RecentEditsTracker *m_recentEditsTracker = nullptr;
     KateAiInlineCompletion::DiagnosticStore *m_diagnosticStore = nullptr;
     KateAiInlineCompletion::DiagnosticsAdapter *m_diagnosticsAdapter = nullptr;
+    std::unique_ptr<KateAiInlineCompletion::CompletionCache> m_completionCache;
+    QString m_completionCacheSettingsSignature;
 
     QAction *m_acceptFullAction = nullptr;
     QAction *m_acceptNextWordAction = nullptr;

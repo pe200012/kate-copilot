@@ -118,6 +118,14 @@ CompletionSettings CompletionSettings::validated() const
     out.manualMultilineMaxTokens = qBound(kStrategyMaxTokensMin, out.manualMultilineMaxTokens, kStrategyMaxTokensMax);
     out.afterAcceptMaxTokens = qBound(kStrategyMaxTokensMin, out.afterAcceptMaxTokens, kStrategyMaxTokensMax);
     out.completionTemperature = qBound(kCompletionTemperatureMin, out.completionTemperature, kCompletionTemperatureMax);
+    out.completionCacheMaxEntries = qBound(kCompletionCacheMaxEntriesMin, out.completionCacheMaxEntries, kCompletionCacheMaxEntriesMax);
+    out.completionCacheTtlMs = qBound(kCompletionCacheTtlMinMs, out.completionCacheTtlMs, kCompletionCacheTtlMaxMs);
+    out.completionCachePrefixTailChars = qBound(kCompletionCachePrefixTailCharsMin,
+                                                out.completionCachePrefixTailChars,
+                                                kCompletionCachePrefixTailCharsMax);
+    out.completionCacheSuffixHeadChars = qBound(kCompletionCacheSuffixHeadCharsMin,
+                                                out.completionCacheSuffixHeadChars,
+                                                kCompletionCacheSuffixHeadCharsMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
 
     out.provider = out.provider.trimmed().toLower();
@@ -198,6 +206,12 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.afterAcceptMaxTokens = group.readEntry("AfterAcceptMaxTokens", d.afterAcceptMaxTokens);
     out.completionTemperature = group.readEntry("CompletionTemperature", d.completionTemperature);
     out.singleLineStopAtNewline = group.readEntry("SingleLineStopAtNewline", d.singleLineStopAtNewline);
+    out.enableCompletionCache = group.readEntry("EnableCompletionCache", d.enableCompletionCache);
+    out.completionCacheMaxEntries = group.readEntry("CompletionCacheMaxEntries", d.completionCacheMaxEntries);
+    out.completionCacheTtlMs = group.readEntry("CompletionCacheTtlMs", d.completionCacheTtlMs);
+    out.completionCachePrefixTailChars = group.readEntry("CompletionCachePrefixTailChars", d.completionCachePrefixTailChars);
+    out.completionCacheSuffixHeadChars = group.readEntry("CompletionCacheSuffixHeadChars", d.completionCacheSuffixHeadChars);
+    out.enableTypingAsSuggested = group.readEntry("EnableTypingAsSuggested", d.enableTypingAsSuggested);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -252,6 +266,12 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("AfterAcceptMaxTokens", v.afterAcceptMaxTokens);
     group.writeEntry("CompletionTemperature", v.completionTemperature);
     group.writeEntry("SingleLineStopAtNewline", v.singleLineStopAtNewline);
+    group.writeEntry("EnableCompletionCache", v.enableCompletionCache);
+    group.writeEntry("CompletionCacheMaxEntries", v.completionCacheMaxEntries);
+    group.writeEntry("CompletionCacheTtlMs", v.completionCacheTtlMs);
+    group.writeEntry("CompletionCachePrefixTailChars", v.completionCachePrefixTailChars);
+    group.writeEntry("CompletionCacheSuffixHeadChars", v.completionCacheSuffixHeadChars);
+    group.writeEntry("EnableTypingAsSuggested", v.enableTypingAsSuggested);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

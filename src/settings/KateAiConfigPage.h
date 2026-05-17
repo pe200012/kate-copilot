@@ -78,6 +78,7 @@ private:
     void updateCredentialsUi();
     void updateContextControlsUi();
     void updateStrategyControlsUi();
+    void updateCacheControlsUi();
     void refreshProviderHint();
     void refreshApiKeyStatus();
     void refreshCopilotStatus();
@@ -116,6 +117,15 @@ private:
     QSpinBox *m_afterAcceptMaxTokens = nullptr;
     QDoubleSpinBox *m_completionTemperature = nullptr;
     QCheckBox *m_singleLineStopAtNewline = nullptr;
+
+    // Cache
+    QGroupBox *m_cacheBox = nullptr;
+    QCheckBox *m_enableCompletionCache = nullptr;
+    QCheckBox *m_enableTypingAsSuggested = nullptr;
+    QSpinBox *m_completionCacheMaxEntries = nullptr;
+    QSpinBox *m_completionCacheTtlMs = nullptr;
+    QSpinBox *m_completionCachePrefixTailChars = nullptr;
+    QSpinBox *m_completionCacheSuffixHeadChars = nullptr;
 
     // Context
     QGroupBox *m_contextBox = nullptr;

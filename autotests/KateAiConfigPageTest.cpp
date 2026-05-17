@@ -30,6 +30,7 @@ private Q_SLOTS:
     void contextualSettingsApplyFromUi();
     void contextControlsFollowMasterAndRelatedFileToggles();
     void strategySettingsApplyFromUi();
+    void cacheSettingsApplyFromUi();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -57,6 +58,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *strategyEnabled = page.findChild<QCheckBox *>(QStringLiteral("adaptiveStrategyCheckBox"));
     auto *singleLineMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("singleLineMaxTokensSpinBox"));
     auto *temperature = page.findChild<QDoubleSpinBox *>(QStringLiteral("completionTemperatureSpinBox"));
+    auto *cacheEnabled = page.findChild<QCheckBox *>(QStringLiteral("completionCacheCheckBox"));
+    auto *typingReuse = page.findChild<QCheckBox *>(QStringLiteral("typingAsSuggestedCheckBox"));
+    auto *cacheMaxEntries = page.findChild<QSpinBox *>(QStringLiteral("completionCacheMaxEntriesSpinBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -71,6 +75,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(strategyEnabled);
     QVERIFY(singleLineMaxTokens);
     QVERIFY(temperature);
+    QVERIFY(cacheEnabled);
+    QVERIFY(typingReuse);
+    QVERIFY(cacheMaxEntries);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -221,6 +228,46 @@ void KateAiConfigPageTest::strategySettingsApplyFromUi()
     QCOMPARE(out.afterAcceptMaxTokens, 55);
     QCOMPARE(out.completionTemperature, 0.6);
     QCOMPARE(out.singleLineStopAtNewline, false);
+}
+
+void KateAiConfigPageTest::cacheSettingsApplyFromUi()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *cacheEnabled = page.findChild<QCheckBox *>(QStringLiteral("completionCacheCheckBox"));
+    auto *typingReuse = page.findChild<QCheckBox *>(QStringLiteral("typingAsSuggestedCheckBox"));
+    auto *maxEntries = page.findChild<QSpinBox *>(QStringLiteral("completionCacheMaxEntriesSpinBox"));
+    auto *ttl = page.findChild<QSpinBox *>(QStringLiteral("completionCacheTtlSpinBox"));
+    auto *prefixTail = page.findChild<QSpinBox *>(QStringLiteral("completionCachePrefixTailSpinBox"));
+    auto *suffixHead = page.findChild<QSpinBox *>(QStringLiteral("completionCacheSuffixHeadSpinBox"));
+
+    QVERIFY(cacheEnabled);
+    QVERIFY(typingReuse);
+    QVERIFY(maxEntries);
+    QVERIFY(ttl);
+    QVERIFY(prefixTail);
+    QVERIFY(suffixHead);
+
+    cacheEnabled->setChecked(false);
+    typingReuse->setChecked(false);
+    maxEntries->setValue(77);
+    ttl->setValue(45000);
+    prefixTail->setValue(900);
+    suffixHead->setValue(300);
+
+    QVERIFY(typingReuse->isEnabled());
+    QVERIFY(!maxEntries->isEnabled());
+
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableCompletionCache, false);
+    QCOMPARE(out.enableTypingAsSuggested, false);
+    QCOMPARE(out.completionCacheMaxEntries, 77);
+    QCOMPARE(out.completionCacheTtlMs, 45000);
+    QCOMPARE(out.completionCachePrefixTailChars, 900);
+    QCOMPARE(out.completionCacheSuffixHeadChars, 300);
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()

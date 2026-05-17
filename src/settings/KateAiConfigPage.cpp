@@ -245,6 +245,44 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_singleLineStopAtNewline->setObjectName(QStringLiteral("singleLineStopAtNewlineCheckBox"));
     strategyForm->addRow(m_singleLineStopAtNewline);
 
+    m_cacheBox = new QGroupBox(i18n("Cache"), this);
+    root->addWidget(m_cacheBox);
+
+    auto *cacheForm = new QFormLayout(m_cacheBox);
+
+    m_enableCompletionCache = new QCheckBox(i18n("Enable completion cache"), m_cacheBox);
+    m_enableCompletionCache->setObjectName(QStringLiteral("completionCacheCheckBox"));
+    cacheForm->addRow(m_enableCompletionCache);
+
+    m_enableTypingAsSuggested = new QCheckBox(i18n("Enable typing-as-suggested reuse"), m_cacheBox);
+    m_enableTypingAsSuggested->setObjectName(QStringLiteral("typingAsSuggestedCheckBox"));
+    cacheForm->addRow(m_enableTypingAsSuggested);
+
+    m_completionCacheMaxEntries = new QSpinBox(m_cacheBox);
+    m_completionCacheMaxEntries->setObjectName(QStringLiteral("completionCacheMaxEntriesSpinBox"));
+    m_completionCacheMaxEntries->setRange(KateAiInlineCompletion::CompletionSettings::kCompletionCacheMaxEntriesMin,
+                                          KateAiInlineCompletion::CompletionSettings::kCompletionCacheMaxEntriesMax);
+    cacheForm->addRow(i18n("Cache max entries"), m_completionCacheMaxEntries);
+
+    m_completionCacheTtlMs = new QSpinBox(m_cacheBox);
+    m_completionCacheTtlMs->setObjectName(QStringLiteral("completionCacheTtlSpinBox"));
+    m_completionCacheTtlMs->setRange(KateAiInlineCompletion::CompletionSettings::kCompletionCacheTtlMinMs,
+                                     KateAiInlineCompletion::CompletionSettings::kCompletionCacheTtlMaxMs);
+    m_completionCacheTtlMs->setSuffix(i18n(" ms"));
+    cacheForm->addRow(i18n("Cache TTL"), m_completionCacheTtlMs);
+
+    m_completionCachePrefixTailChars = new QSpinBox(m_cacheBox);
+    m_completionCachePrefixTailChars->setObjectName(QStringLiteral("completionCachePrefixTailSpinBox"));
+    m_completionCachePrefixTailChars->setRange(KateAiInlineCompletion::CompletionSettings::kCompletionCachePrefixTailCharsMin,
+                                               KateAiInlineCompletion::CompletionSettings::kCompletionCachePrefixTailCharsMax);
+    cacheForm->addRow(i18n("Prefix tail hash characters"), m_completionCachePrefixTailChars);
+
+    m_completionCacheSuffixHeadChars = new QSpinBox(m_cacheBox);
+    m_completionCacheSuffixHeadChars->setObjectName(QStringLiteral("completionCacheSuffixHeadSpinBox"));
+    m_completionCacheSuffixHeadChars->setRange(KateAiInlineCompletion::CompletionSettings::kCompletionCacheSuffixHeadCharsMin,
+                                               KateAiInlineCompletion::CompletionSettings::kCompletionCacheSuffixHeadCharsMax);
+    cacheForm->addRow(i18n("Suffix head hash characters"), m_completionCacheSuffixHeadChars);
+
     m_contextBox = new QGroupBox(i18n("Context"), this);
     root->addWidget(m_contextBox);
 
@@ -436,6 +474,13 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     connect(m_completionTemperature, qOverload<double>(&QDoubleSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_singleLineStopAtNewline, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
 
+    connect(m_enableCompletionCache, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableTypingAsSuggested, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_completionCacheMaxEntries, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_completionCacheTtlMs, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_completionCachePrefixTailChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_completionCacheSuffixHeadChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+
     connect(m_enableContextualPrompt, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextItems, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
@@ -539,6 +584,7 @@ void KateAiConfigPage::slotUiChanged()
 {
     updateContextControlsUi();
     updateStrategyControlsUi();
+    updateCacheControlsUi();
     setChanged(true);
 }
 
@@ -763,8 +809,16 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_completionTemperature->setValue(v.completionTemperature);
     m_singleLineStopAtNewline->setChecked(v.singleLineStopAtNewline);
 
+    m_enableCompletionCache->setChecked(v.enableCompletionCache);
+    m_enableTypingAsSuggested->setChecked(v.enableTypingAsSuggested);
+    m_completionCacheMaxEntries->setValue(v.completionCacheMaxEntries);
+    m_completionCacheTtlMs->setValue(v.completionCacheTtlMs);
+    m_completionCachePrefixTailChars->setValue(v.completionCachePrefixTailChars);
+    m_completionCacheSuffixHeadChars->setValue(v.completionCacheSuffixHeadChars);
+
     updateContextControlsUi();
     updateStrategyControlsUi();
+    updateCacheControlsUi();
     updateCredentialsUi();
 }
 
@@ -802,6 +856,13 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.afterAcceptMaxTokens = m_afterAcceptMaxTokens->value();
     s.completionTemperature = m_completionTemperature->value();
     s.singleLineStopAtNewline = m_singleLineStopAtNewline->isChecked();
+
+    s.enableCompletionCache = m_enableCompletionCache->isChecked();
+    s.enableTypingAsSuggested = m_enableTypingAsSuggested->isChecked();
+    s.completionCacheMaxEntries = m_completionCacheMaxEntries->value();
+    s.completionCacheTtlMs = m_completionCacheTtlMs->value();
+    s.completionCachePrefixTailChars = m_completionCachePrefixTailChars->value();
+    s.completionCacheSuffixHeadChars = m_completionCacheSuffixHeadChars->value();
 
     s.copilotClientId = m_copilotClientId->text().trimmed();
     s.copilotNwo = m_copilotNwo->text().trimmed();
@@ -851,6 +912,20 @@ void KateAiConfigPage::updateStrategyControlsUi()
     m_afterAcceptMaxTokens->setEnabled(strategyEnabled);
     m_completionTemperature->setEnabled(strategyEnabled);
     m_singleLineStopAtNewline->setEnabled(strategyEnabled);
+}
+
+void KateAiConfigPage::updateCacheControlsUi()
+{
+    if (!m_enableCompletionCache) {
+        return;
+    }
+
+    const bool cacheEnabled = m_enableCompletionCache->isChecked();
+    m_enableTypingAsSuggested->setEnabled(true);
+    m_completionCacheMaxEntries->setEnabled(cacheEnabled);
+    m_completionCacheTtlMs->setEnabled(cacheEnabled);
+    m_completionCachePrefixTailChars->setEnabled(cacheEnabled);
+    m_completionCacheSuffixHeadChars->setEnabled(cacheEnabled);
 }
 
 void KateAiConfigPage::updateCredentialsUi()
