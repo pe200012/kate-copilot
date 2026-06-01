@@ -153,6 +153,9 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         session/CompletionStrategyEngine.h
         session/CompletionCache.cpp
         session/CompletionCache.h
+        session/CompletionCandidate.h
+        session/CompletionCandidateList.cpp
+        session/CompletionCandidateList.h
         session/GhostTextState.h
         session/SuggestionAnchorTracker.cpp
         session/SuggestionAnchorTracker.h

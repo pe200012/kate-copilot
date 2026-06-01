@@ -126,6 +126,12 @@ CompletionSettings CompletionSettings::validated() const
     out.completionCacheSuffixHeadChars = qBound(kCompletionCacheSuffixHeadCharsMin,
                                                 out.completionCacheSuffixHeadChars,
                                                 kCompletionCacheSuffixHeadCharsMax);
+    out.manualCandidateCount = qBound(kManualCandidateCountMin, out.manualCandidateCount, kManualCandidateCountMax);
+    out.maxStoredCandidates = qBound(kMaxStoredCandidatesMin, out.maxStoredCandidates, kMaxStoredCandidatesMax);
+    out.speculativeRequestDelayMs = qBound(kSpeculativeRequestDelayMinMs, out.speculativeRequestDelayMs, kSpeculativeRequestDelayMaxMs);
+    out.speculativeRequestMaxTokens = qBound(kSpeculativeRequestMaxTokensMin,
+                                             out.speculativeRequestMaxTokens,
+                                             kSpeculativeRequestMaxTokensMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
 
     out.provider = out.provider.trimmed().toLower();
@@ -212,6 +218,12 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.completionCachePrefixTailChars = group.readEntry("CompletionCachePrefixTailChars", d.completionCachePrefixTailChars);
     out.completionCacheSuffixHeadChars = group.readEntry("CompletionCacheSuffixHeadChars", d.completionCacheSuffixHeadChars);
     out.enableTypingAsSuggested = group.readEntry("EnableTypingAsSuggested", d.enableTypingAsSuggested);
+    out.enableCandidateCycling = group.readEntry("EnableCandidateCycling", d.enableCandidateCycling);
+    out.manualCandidateCount = group.readEntry("ManualCandidateCount", d.manualCandidateCount);
+    out.maxStoredCandidates = group.readEntry("MaxStoredCandidates", d.maxStoredCandidates);
+    out.enableSpeculativeRequests = group.readEntry("EnableSpeculativeRequests", d.enableSpeculativeRequests);
+    out.speculativeRequestDelayMs = group.readEntry("SpeculativeRequestDelayMs", d.speculativeRequestDelayMs);
+    out.speculativeRequestMaxTokens = group.readEntry("SpeculativeRequestMaxTokens", d.speculativeRequestMaxTokens);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -272,6 +284,12 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("CompletionCachePrefixTailChars", v.completionCachePrefixTailChars);
     group.writeEntry("CompletionCacheSuffixHeadChars", v.completionCacheSuffixHeadChars);
     group.writeEntry("EnableTypingAsSuggested", v.enableTypingAsSuggested);
+    group.writeEntry("EnableCandidateCycling", v.enableCandidateCycling);
+    group.writeEntry("ManualCandidateCount", v.manualCandidateCount);
+    group.writeEntry("MaxStoredCandidates", v.maxStoredCandidates);
+    group.writeEntry("EnableSpeculativeRequests", v.enableSpeculativeRequests);
+    group.writeEntry("SpeculativeRequestDelayMs", v.speculativeRequestDelayMs);
+    group.writeEntry("SpeculativeRequestMaxTokens", v.speculativeRequestMaxTokens);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

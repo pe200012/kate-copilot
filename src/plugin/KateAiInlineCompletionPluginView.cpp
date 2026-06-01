@@ -39,6 +39,7 @@ KateAiInlineCompletion::CompletionCacheOptions completionCacheOptionsFromSetting
     options.ttlMs = settings.completionCacheTtlMs;
     options.prefixTailChars = settings.completionCachePrefixTailChars;
     options.suffixHeadChars = settings.completionCacheSuffixHeadChars;
+    options.maxStoredCandidates = settings.maxStoredCandidates;
     return options;
 }
 
@@ -226,6 +227,24 @@ void KateAiInlineCompletionPluginView::setupActions()
         }
     });
 
+    m_nextCandidateAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_completion_next_candidate"));
+    m_nextCandidateAction->setText(i18n("Show Next AI Inline Candidate"));
+    actionCollection()->setDefaultShortcut(m_nextCandidateAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Down));
+    connect(m_nextCandidateAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeSession()) {
+            session->nextCandidate();
+        }
+    });
+
+    m_previousCandidateAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_completion_previous_candidate"));
+    m_previousCandidateAction->setText(i18n("Show Previous AI Inline Candidate"));
+    actionCollection()->setDefaultShortcut(m_previousCandidateAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Up));
+    connect(m_previousCandidateAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeSession()) {
+            session->previousCandidate();
+        }
+    });
+
     updateActionState();
 }
 
@@ -258,6 +277,10 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
         updateActionState();
     });
 
+    connect(session, &KateAiInlineCompletion::EditorSession::candidateStateChanged, this, [this] {
+        updateActionState();
+    });
+
     connect(view, &QObject::destroyed, this, [this, view] {
         m_sessions.remove(view);
         updateActionState();
@@ -280,8 +303,10 @@ KateAiInlineCompletion::EditorSession *KateAiInlineCompletionPluginView::activeS
 
 void KateAiInlineCompletionPluginView::updateActionState()
 {
-    const bool hasSession = activeSession() != nullptr;
-    const bool hasSuggestion = hasSession && activeSession()->hasVisibleSuggestion();
+    auto *session = activeSession();
+    const bool hasSession = session != nullptr;
+    const bool hasSuggestion = hasSession && session->hasVisibleSuggestion();
+    const bool canCycle = hasSuggestion && session->candidateCount() > 1 && m_plugin && m_plugin->settings().validated().enableCandidateCycling;
 
     if (m_acceptFullAction) {
         m_acceptFullAction->setEnabled(hasSuggestion);
@@ -297,5 +322,11 @@ void KateAiInlineCompletionPluginView::updateActionState()
     }
     if (m_triggerAction) {
         m_triggerAction->setEnabled(hasSession);
+    }
+    if (m_nextCandidateAction) {
+        m_nextCandidateAction->setEnabled(canCycle);
+    }
+    if (m_previousCandidateAction) {
+        m_previousCandidateAction->setEnabled(canCycle);
     }
 }

@@ -66,8 +66,21 @@ target_include_directories(kateaiinlinecompletion_completion_strategy_engine_tes
         ${CMAKE_SOURCE_DIR}/src
 )
 
+ecm_add_test(CompletionCandidateListTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCandidateList.cpp
+    TEST_NAME kateaiinlinecompletion_completion_candidate_list_test
+    LINK_LIBRARIES
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_completion_candidate_list_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 ecm_add_test(CompletionCacheTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionCache.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCandidateList.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategy.cpp
     TEST_NAME kateaiinlinecompletion_completion_cache_test
     LINK_LIBRARIES
@@ -220,6 +233,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionCache.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCandidateList.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategy.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
@@ -272,6 +286,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
     ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionCache.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCandidateList.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategy.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp

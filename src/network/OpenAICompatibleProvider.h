@@ -15,6 +15,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <QSet>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -36,11 +37,16 @@ private:
     struct RequestContext {
         QPointer<QNetworkReply> reply;
         SSEParser parser;
+        QHash<int, QString> candidateTextByIndex;
+        QSet<int> emittedCandidateIndexes;
+        int expectedCandidateCount = 1;
+        int maxCandidateChars = 32768;
         bool cancelled = false;
         bool finishedNotified = false;
     };
 
     void handleSseData(quint64 requestId, const QString &data);
+    void emitPendingCandidates(quint64 requestId, RequestContext &ctx);
 
     QNetworkAccessManager *m_manager = nullptr;
     quint64 m_nextRequestId = 1;

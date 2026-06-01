@@ -40,9 +40,11 @@
 #include <QDateTime>
 #include <QEvent>
 #include <QGuiApplication>
+#include <QJsonDocument>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QNetworkAccessManager>
+#include <QUuid>
 #include <QVariantMap>
 #include <QWidget>
 
@@ -68,7 +70,15 @@ static QString documentDisplayPath(KTextEditor::Document *doc)
         return doc->url().toDisplayString(QUrl::PreferLocalFile);
     }
 
-    return doc->documentName();
+    static constexpr const char *kStableUntitledDocumentIdProperty = "_kate_ai_inline_completion_stable_untitled_document_id";
+    const QVariant existing = doc->property(kStableUntitledDocumentIdProperty);
+    if (existing.isValid() && !existing.toString().isEmpty()) {
+        return existing.toString();
+    }
+
+    const QString stableId = QStringLiteral("untitled:%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    doc->setProperty(kStableUntitledDocumentIdProperty, stableId);
+    return stableId;
 }
 
 static PromptAssemblyOptions promptAssemblyOptionsFromSettings(const CompletionSettings &settings)
@@ -274,6 +284,50 @@ static SuggestionProcessingContext suggestionProcessingContext(KTextEditor::Docu
     return ctx;
 }
 
+static KTextEditor::Cursor cursorAfterInsertedText(const KTextEditor::Cursor &cursor, const QString &text)
+{
+    if (!cursor.isValid()) {
+        return cursor;
+    }
+
+    const QString normalized = QString(text).replace(QStringLiteral("\r\n"), QStringLiteral("\n")).replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    const int newlineCount = normalized.count(QLatin1Char('\n'));
+    if (newlineCount == 0) {
+        return KTextEditor::Cursor(cursor.line(), cursor.column() + normalized.size());
+    }
+
+    const int lastNewline = normalized.lastIndexOf(QLatin1Char('\n'));
+    return KTextEditor::Cursor(cursor.line() + newlineCount, normalized.size() - lastNewline - 1);
+}
+
+static QString rightBounded(QString text, int maxChars)
+{
+    if (maxChars <= 0) {
+        return {};
+    }
+
+    if (text.size() > maxChars) {
+        return text.right(maxChars);
+    }
+
+    return text;
+}
+
+static QString assembledPromptFingerprint(const CompletionRequest &request, bool providerIsCopilot)
+{
+    if (providerIsCopilot) {
+        return request.prompt + QChar(0x1f) + request.suffix + QChar(0x1f) + QString::fromUtf8(QJsonDocument(request.extra).toJson(QJsonDocument::Compact));
+    }
+
+    return request.systemPrompt + QChar(0x1f) + request.userPrompt;
+}
+
+static QString requestShapeFingerprint(const CompletionRequest &request)
+{
+    return QStringLiteral("max=%1\u001ftemp=%2\u001fn=%3\u001fstops=%4")
+        .arg(QString::number(request.maxTokens), QString::number(request.temperature, 'g', 12), QString::number(request.n), request.stopSequences.join(QChar(0x1e)));
+}
+
 EditorSession::EditorSession(KTextEditor::View *view,
                              KateAiInlineCompletionPlugin *plugin,
                              KWalletSecretStore *secretStore,
@@ -295,6 +349,9 @@ EditorSession::EditorSession(KTextEditor::View *view,
 {
     m_debounceTimer.setSingleShot(true);
     connect(&m_debounceTimer, &QTimer::timeout, this, &EditorSession::onDebounceTimeout);
+
+    m_speculativeTimer.setSingleShot(true);
+    connect(&m_speculativeTimer, &QTimer::timeout, this, &EditorSession::startSpeculativeRequest);
 
     if (m_view) {
         m_inlineNoteProvider = std::make_unique<GhostTextInlineNoteProvider>();
@@ -429,6 +486,11 @@ void EditorSession::onTextInserted(KTextEditor::View *view, KTextEditor::Cursor 
         return;
     }
 
+    if (m_ignoreNextTextInsertedAfterTypingReuse) {
+        m_ignoreNextTextInsertedAfterTypingReuse = false;
+        return;
+    }
+
     if (tryReuseVisibleSuggestionForTypedText(text)) {
         return;
     }
@@ -451,7 +513,9 @@ void EditorSession::onCursorPositionChanged(KTextEditor::View *view, KTextEditor
     }
 
     if (!m_pendingTypingReuseText.isEmpty() && hasVisibleSuggestion()) {
-        m_skippedCursorMoveBeforeTextInsert = true;
+        if (tryReuseVisibleSuggestionForTypedText(m_pendingTypingReuseText)) {
+            m_ignoreNextTextInsertedAfterTypingReuse = true;
+        }
         return;
     }
 
@@ -503,11 +567,11 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
         return;
     }
 
-    m_rawSuggestionText += delta;
+    m_activeCandidateRawByIndex[0] += delta;
 
-    QString textToProcess = m_rawSuggestionText;
+    QString textToProcess = m_activeCandidateRawByIndex.value(0);
     if (!m_acceptedFromSuggestion.isEmpty()) {
-        const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
+        const QString full = PromptTemplate::sanitizeCompletion(m_activeCandidateRawByIndex.value(0));
         if (full.startsWith(m_acceptedFromSuggestion)) {
             textToProcess = full.mid(m_acceptedFromSuggestion.size());
         } else {
@@ -520,14 +584,86 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
     const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
     const ProcessedSuggestion processed = SuggestionPostProcessor::process(textToProcess, suggestionProcessingContext(doc, anchorCursor));
 
-    const bool valid = applyProcessedSuggestion(processed);
-    m_suggestionSource = valid ? SuggestionSource::Network : SuggestionSource::None;
+    if (processed.valid) {
+        CompletionCandidate candidate = candidateFromProcessed(textToProcess, processed, QStringLiteral("network"), 0);
+        candidate.id = QStringLiteral("network:0");
+        const int currentIndex = m_candidates.currentIndex();
+        const QString currentId = m_candidates.current().id;
+        m_candidates.addCandidate(candidate);
+        Q_EMIT candidateStateChanged();
+        if (currentIndex <= 0 || currentId == candidate.id) {
+            (void)applyCurrentCandidate();
+        }
+    } else if (m_candidates.currentIndex() <= 0) {
+        (void)applyProcessedSuggestion({});
+        m_suggestionSource = SuggestionSource::None;
+    }
 
     applyStateToOverlay();
 }
 
+void EditorSession::onCandidateReceived(quint64 requestId, int index, const QString &fullText)
+{
+    if (requestId == m_speculativeRequestId) {
+        m_speculativeCandidateRawByIndex[index] = fullText;
+        return;
+    }
+
+    if (requestId != m_activeRequestId) {
+        return;
+    }
+
+    if (m_state.anchor.generation != m_generation) {
+        return;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        clearSuggestion();
+        return;
+    }
+
+    m_activeCandidateRawByIndex[index] = fullText;
+
+    QString textToProcess = fullText;
+    if (index == 0 && !m_acceptedFromSuggestion.isEmpty()) {
+        const QString full = PromptTemplate::sanitizeCompletion(fullText);
+        if (full.startsWith(m_acceptedFromSuggestion)) {
+            textToProcess = full.mid(m_acceptedFromSuggestion.size());
+        } else {
+            return;
+        }
+    }
+
+    KTextEditor::Document *doc = m_view ? m_view->document() : nullptr;
+    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
+    const ProcessedSuggestion processed = SuggestionPostProcessor::process(textToProcess, suggestionProcessingContext(doc, anchorCursor));
+    if (!processed.valid) {
+        return;
+    }
+
+    CompletionCandidate candidate = candidateFromProcessed(textToProcess, processed, QStringLiteral("network"), index);
+    candidate.id = QStringLiteral("network:%1").arg(index);
+
+    const QString currentId = m_candidates.current().id;
+    const bool applyAfterAdd = m_candidates.isEmpty() || currentId == candidate.id;
+    m_candidates.addCandidate(candidate);
+    Q_EMIT candidateStateChanged();
+    if (applyAfterAdd) {
+        (void)applyCurrentCandidate();
+        applyStateToOverlay();
+    }
+}
+
 void EditorSession::onRequestFinished(quint64 requestId)
 {
+    if (requestId == m_speculativeRequestId) {
+        finishSpeculativeRequest();
+        m_speculativeRequestId = 0;
+        m_speculativeCandidateRawByIndex.clear();
+        m_speculativeCacheKey = CompletionCacheKey{};
+        return;
+    }
+
     if (requestId != m_activeRequestId) {
         return;
     }
@@ -540,15 +676,21 @@ void EditorSession::onRequestFinished(quint64 requestId)
     m_activeRequestId = 0;
     m_state.streaming = false;
 
-    if (m_completionCache && m_hasActiveCacheKey && m_suggestionSource == SuggestionSource::Network && !m_rawSuggestionText.isEmpty()
-        && !m_state.visibleText.isEmpty() && !m_state.insertText.isEmpty()) {
+    if (m_completionCache && m_hasActiveCacheKey && m_suggestionSource == SuggestionSource::Network && m_acceptedFromSuggestion.isEmpty() && !m_candidates.isEmpty()) {
         CompletionCacheValue value;
-        value.rawCompletion = m_rawSuggestionText;
-        value.processedInsertText = m_state.insertText;
-        value.processedDisplayText = m_state.visibleText;
-        value.suffixCoverage = m_state.suffixCoverage;
+        value.candidates = m_candidates.candidates();
+        const CompletionCandidate current = m_candidates.current();
+        value.rawCompletion = current.rawCompletion;
+        value.processedInsertText = current.insertText;
+        value.processedDisplayText = current.displayText;
+        value.suffixCoverage = current.suffixCoverage;
         value.createdAt = QDateTime::currentDateTimeUtc();
         m_completionCache->insert(m_activeCacheKey, value);
+    }
+
+    const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
+    if (m_suggestionSource == SuggestionSource::Network) {
+        scheduleSpeculativeRequestIfEnabled(settings);
     }
 
     applyStateToOverlay();
@@ -556,6 +698,13 @@ void EditorSession::onRequestFinished(quint64 requestId)
 
 void EditorSession::onRequestFailed(quint64 requestId, const QString &message)
 {
+    if (requestId == m_speculativeRequestId) {
+        m_speculativeRequestId = 0;
+        m_speculativeCandidateRawByIndex.clear();
+        m_speculativeCacheKey = CompletionCacheKey{};
+        return;
+    }
+
     if (requestId != m_activeRequestId) {
         return;
     }
@@ -581,6 +730,19 @@ void EditorSession::onDocumentTextChanged(KTextEditor::Document *document)
         return;
     }
 
+    const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
+    if (settings.enableTypingAsSuggested && m_anchorTracker.isValid()) {
+        const KTextEditor::Cursor oldAnchor(m_state.anchor.line, m_state.anchor.column);
+        const KTextEditor::Cursor newAnchor = m_anchorTracker.position();
+        if (oldAnchor.isValid() && newAnchor.isValid() && oldAnchor.line() == newAnchor.line() && newAnchor.column() > oldAnchor.column()) {
+            const QString typedText = document->text(KTextEditor::Range(oldAnchor, newAnchor));
+            if (!typedText.isEmpty() && m_state.visibleText.startsWith(typedText)) {
+                (void)tryReuseVisibleSuggestionForTypedText(typedText);
+                return;
+            }
+        }
+    }
+
     if (!syncAnchorFromTracker()) {
         clearSuggestion();
         return;
@@ -604,6 +766,278 @@ bool EditorSession::applyProcessedSuggestion(const ProcessedSuggestion &processe
     m_state.replaceRange = KTextEditor::Range::invalid();
     m_state.suffixCoverage = 0;
     return false;
+}
+
+CompletionCandidate EditorSession::candidateFromProcessed(const QString &raw, const ProcessedSuggestion &processed, const QString &source, int index) const
+{
+    CompletionCandidate candidate;
+    if (!processed.valid) {
+        return candidate;
+    }
+
+    candidate.rawCompletion = raw;
+    candidate.insertText = processed.insertText;
+    candidate.displayText = processed.displayText;
+    candidate.replaceRange = processed.replaceRange;
+    candidate.suffixCoverage = processed.suffixCoverage;
+    candidate.source = source;
+    candidate.id = QStringLiteral("%1:%2").arg(source, QString::number(index));
+    return candidate;
+}
+
+void EditorSession::setCandidatesForCurrentAnchor(QVector<CompletionCandidate> candidates)
+{
+    m_candidates.setCandidates(std::move(candidates));
+    (void)applyCurrentCandidate();
+    Q_EMIT candidateStateChanged();
+}
+
+bool EditorSession::applyCurrentCandidate()
+{
+    if (m_candidates.isEmpty()) {
+        (void)applyProcessedSuggestion({});
+        return false;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        clearSuggestion();
+        return false;
+    }
+
+    const CompletionCandidate candidate = m_candidates.current();
+    m_state.visibleText = candidate.displayText;
+    m_state.insertText = candidate.insertText;
+    m_state.replaceRange = candidate.replaceRange;
+    m_state.suffixCoverage = candidate.suffixCoverage;
+    m_rawSuggestionText = candidate.rawCompletion;
+
+    if (candidate.source == QStringLiteral("network")) {
+        m_suggestionSource = SuggestionSource::Network;
+    } else if (candidate.source == QStringLiteral("cache")) {
+        m_suggestionSource = SuggestionSource::Cache;
+    } else if (candidate.source == QStringLiteral("typing-as-suggested")) {
+        m_suggestionSource = SuggestionSource::TypingAsSuggested;
+    }
+
+    return true;
+}
+
+void EditorSession::replaceCurrentCandidateWithProcessed(const QString &raw, const ProcessedSuggestion &processed, const QString &source)
+{
+    const CompletionCandidate current = m_candidates.current();
+    const int index = qMax(0, m_candidates.currentIndex());
+    CompletionCandidate candidate = candidateFromProcessed(raw, processed, source, index);
+    if (!current.id.isEmpty()) {
+        candidate.id = current.id;
+    }
+    setCandidatesForCurrentAnchor({candidate});
+}
+
+void EditorSession::filterAndShrinkCandidatesByPrefix(const QString &prefix)
+{
+    KTextEditor::Document *doc = m_view ? m_view->document() : nullptr;
+    const KTextEditor::Cursor cursor = m_view ? m_view->cursorPosition() : KTextEditor::Cursor::invalid();
+
+    QVector<CompletionCandidate> currentOut;
+    QVector<CompletionCandidate> alternativesOut;
+    const QString currentId = m_candidates.current().id;
+    const QVector<CompletionCandidate> candidates = m_candidates.candidates();
+    for (const CompletionCandidate &candidate : candidates) {
+        if (!candidate.insertText.startsWith(prefix) || !candidate.displayText.startsWith(prefix)) {
+            continue;
+        }
+
+        const QString remainingRaw = candidate.rawCompletion.startsWith(prefix) ? candidate.rawCompletion.mid(prefix.size()) : candidate.insertText.mid(prefix.size());
+        const ProcessedSuggestion processed = SuggestionPostProcessor::process(remainingRaw, suggestionProcessingContext(doc, cursor));
+        if (!processed.valid) {
+            continue;
+        }
+
+        CompletionCandidate shrunk = candidateFromProcessed(remainingRaw, processed, QStringLiteral("typing-as-suggested"), currentOut.size() + alternativesOut.size());
+        shrunk.id = candidate.id;
+        if (!currentId.isEmpty() && candidate.id == currentId) {
+            currentOut.push_back(shrunk);
+        } else {
+            alternativesOut.push_back(shrunk);
+        }
+    }
+
+    QVector<CompletionCandidate> out = currentOut;
+    out += alternativesOut;
+    setCandidatesForCurrentAnchor(out);
+}
+
+void EditorSession::scheduleSpeculativeRequestIfEnabled(const CompletionSettings &settings)
+{
+    const CompletionSettings validated = settings.validated();
+    if (!validated.enableSpeculativeRequests || !validated.enableCompletionCache || !m_completionCache || !m_provider || !m_view || !m_view->document()) {
+        return;
+    }
+
+    if (!hasVisibleSuggestion() || m_candidates.isEmpty() || m_activeRequestId != 0 || m_speculativeRequestId != 0) {
+        return;
+    }
+
+    m_speculativeTimer.start(validated.speculativeRequestDelayMs);
+}
+
+void EditorSession::startSpeculativeRequest()
+{
+    if (!m_view || !m_view->document() || !m_plugin || !m_completionCache || !m_provider || m_activeRequestId != 0 || m_speculativeRequestId != 0) {
+        return;
+    }
+
+    const CompletionSettings settings = m_plugin->settings().validated();
+    if (!settings.enabled || !settings.enableSpeculativeRequests || !settings.enableCompletionCache || !hasVisibleSuggestion() || m_candidates.isEmpty()) {
+        return;
+    }
+
+    KTextEditor::Document *doc = m_view->document();
+    const KTextEditor::Cursor cursor = m_view->cursorPosition();
+    if (!cursorEquals(cursor, m_state.anchor)) {
+        return;
+    }
+
+    const CompletionCandidate current = m_candidates.current();
+    if (current.insertText.isEmpty()) {
+        return;
+    }
+
+    const QUrl endpoint = settings.endpoint;
+    QString apiKey;
+    if (m_secretStore) {
+        apiKey = m_secretStore->readApiKey();
+    }
+
+    const bool providerIsOllama = settings.provider == QString::fromLatin1(CompletionSettings::kProviderOllama);
+    const bool providerIsCopilot = settings.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
+    const bool apiKeyRequired = !providerIsOllama && !providerIsCopilot && !isLocalEndpoint(endpoint);
+    if (apiKeyRequired && apiKey.trimmed().isEmpty()) {
+        return;
+    }
+
+    if (providerIsCopilot && (!m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
+        return;
+    }
+
+    const QString prefix = rightBounded(extractPrefix(settings.maxPrefixChars) + current.insertText, settings.maxPrefixChars);
+    const KTextEditor::Cursor suffixCursor = current.replaceRange.isValid() ? current.replaceRange.end() : cursor;
+    const QString suffix = extractSuffixFromCursor(suffixCursor, settings.maxSuffixChars);
+    const QString language = doc->highlightingMode();
+    const QString filePath = documentDisplayPath(doc);
+    const KTextEditor::Cursor virtualCursor = cursorAfterInsertedText(cursor, current.insertText);
+
+    PromptContext promptCtx;
+    promptCtx.filePath = filePath;
+    promptCtx.language = language;
+    promptCtx.cursorLine1 = virtualCursor.line() + 1;
+    promptCtx.cursorColumn1 = virtualCursor.column() + 1;
+    promptCtx.prefix = prefix;
+    promptCtx.suffix = suffix;
+
+    CompletionStrategy strategy = CompletionStrategyEngine::choose(completionStrategyRequestFromDocument(doc,
+                                                                                                         cursor,
+                                                                                                         settings,
+                                                                                                         filePath,
+                                                                                                         language,
+                                                                                                         prefix,
+                                                                                                         suffix,
+                                                                                                         false,
+                                                                                                         false,
+                                                                                                         true),
+                                                                   settings);
+    strategy.maxTokens = qMin(strategy.maxTokens, settings.speculativeRequestMaxTokens);
+
+    const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
+    const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
+
+    CompletionRequest request;
+    request.endpoint = endpoint;
+    request.model = settings.model;
+    request.maxTokens = strategy.maxTokens;
+    request.temperature = strategy.temperature;
+    request.n = 1;
+
+    if (providerIsCopilot) {
+        CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
+        built.prompt = PromptAssembler::renderCopilotContextPrefix(promptCtx, contextItems, assemblyOptions) + built.prompt;
+
+        request.prompt = built.prompt;
+        request.suffix = built.suffix;
+        request.nwo = settings.copilotNwo;
+        request.stopSequences = {QStringLiteral("```")};
+        appendStrategyStopSequences(request.stopSequences, strategy.stopSequences);
+
+        QJsonObject extra;
+        extra[QStringLiteral("language")] = built.languageId;
+        extra[QStringLiteral("next_indent")] = built.nextIndent;
+        extra[QStringLiteral("trim_by_indentation")] = true;
+        request.extra = extra;
+    } else {
+        const BuiltPrompt built = PromptAssembler::build(settings.promptTemplate, promptCtx, contextItems, assemblyOptions);
+
+        request.apiKey = apiKey;
+        request.systemPrompt = built.systemPrompt;
+        request.userPrompt = built.userPrompt;
+        request.stopSequences = built.stopSequences;
+        appendStrategyStopSequences(request.stopSequences, strategy.stopSequences);
+    }
+
+    m_speculativeCacheKey = CompletionCache::makeKey(settings,
+                                                     strategy,
+                                                     promptCtx,
+                                                     prefix,
+                                                     suffix,
+                                                     request.n,
+                                                     assembledPromptFingerprint(request, providerIsCopilot),
+                                                     requestShapeFingerprint(request));
+    if (m_completionCache->lookupExact(m_speculativeCacheKey).has_value()) {
+        return;
+    }
+
+    m_speculativeCandidateRawByIndex.clear();
+    m_speculativeRequestId = m_provider->start(request);
+}
+
+void EditorSession::cancelSpeculativeRequest()
+{
+    m_speculativeTimer.stop();
+    if (m_speculativeRequestId != 0 && m_provider) {
+        m_provider->cancel(m_speculativeRequestId);
+    }
+    m_speculativeRequestId = 0;
+    m_speculativeCandidateRawByIndex.clear();
+    m_speculativeCacheKey = CompletionCacheKey{};
+}
+
+void EditorSession::finishSpeculativeRequest()
+{
+    if (!m_completionCache || m_speculativeCandidateRawByIndex.isEmpty()) {
+        return;
+    }
+
+    CompletionCacheValue value;
+    QList<int> indexes = m_speculativeCandidateRawByIndex.keys();
+    std::sort(indexes.begin(), indexes.end());
+    for (int index : indexes) {
+        const QString raw = PromptTemplate::sanitizeCompletion(m_speculativeCandidateRawByIndex.value(index));
+        if (raw.trimmed().isEmpty()) {
+            continue;
+        }
+
+        CompletionCandidate candidate;
+        candidate.rawCompletion = raw;
+        candidate.insertText = raw;
+        candidate.displayText = raw;
+        candidate.source = QStringLiteral("speculative");
+        candidate.id = QStringLiteral("speculative:%1").arg(index);
+        value.candidates.push_back(candidate);
+    }
+
+    if (!value.candidates.isEmpty()) {
+        value.createdAt = QDateTime::currentDateTimeUtc();
+        m_completionCache->insert(m_speculativeCacheKey, value);
+    }
 }
 
 bool EditorSession::tryReuseVisibleSuggestionForTypedText(const QString &text)
@@ -647,19 +1081,8 @@ bool EditorSession::tryReuseVisibleSuggestionForTypedText(const QString &text)
         return true;
     }
 
-    KTextEditor::Document *doc = m_view->document();
-    const QString full = PromptTemplate::sanitizeCompletion(m_rawSuggestionText);
-    if (!full.startsWith(m_acceptedFromSuggestion)) {
-        bumpGeneration();
-        scheduleCompletion();
-        return true;
-    }
-
-    const QString remaining = full.mid(m_acceptedFromSuggestion.size());
-    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
-    const ProcessedSuggestion processed = SuggestionPostProcessor::process(remaining, suggestionProcessingContext(doc, anchorCursor));
-    const bool stillVisible = applyProcessedSuggestion(processed);
-    m_suggestionSource = stillVisible ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
+    filterAndShrinkCandidatesByPrefix(typedText);
+    m_suggestionSource = hasVisibleSuggestion() ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
     m_ignoreNextCursorMoveAfterTypingReuse = !m_skippedCursorMoveBeforeTextInsert;
     m_skippedCursorMoveBeforeTextInsert = false;
     m_pendingTypingReuseText.clear();
@@ -671,6 +1094,8 @@ bool EditorSession::tryReuseVisibleSuggestionForTypedText(const QString &text)
 void EditorSession::bumpGeneration()
 {
     ++m_generation;
+    m_debounceTimer.stop();
+    cancelSpeculativeRequest();
     m_nextRequestManualTrigger = false;
     m_nextRequestAfterPartialAccept = false;
     m_nextRequestAfterFullAccept = false;
@@ -794,40 +1219,6 @@ void EditorSession::startRequest()
                                                                                                                afterPartialAccept,
                                                                                                                afterFullAccept),
                                                                          settings);
-    const bool cacheEnabled = settings.enableCompletionCache && m_completionCache;
-    const CompletionCacheKey cacheKey = CompletionCache::makeKey(settings, strategy, promptCtx, prefix, suffix);
-
-    if (cacheEnabled) {
-        const std::optional<CompletionCacheValue> cached = m_completionCache->lookupExact(cacheKey);
-        if (cached.has_value()) {
-            const ProcessedSuggestion processed = SuggestionPostProcessor::process(cached->rawCompletion, suggestionProcessingContext(doc, cursor));
-            if (processed.valid) {
-                if (m_activeRequestId != 0) {
-                    m_provider->cancel(m_activeRequestId);
-                    m_activeRequestId = 0;
-                }
-
-                m_anchorTracker.attach(doc, cursor);
-                m_state.anchor.generation = m_generation;
-                m_state.anchorTracked = m_anchorTracker.isValid();
-                (void)syncAnchorFromTracker();
-
-                m_rawSuggestionText = cached->rawCompletion;
-                m_acceptedFromSuggestion.clear();
-                m_typedPrefixFromSuggestion.clear();
-                m_activeCacheKey = cacheKey;
-                m_hasActiveCacheKey = true;
-                m_state.streaming = false;
-                m_state.suppressed = false;
-                (void)applyProcessedSuggestion(processed);
-                m_suggestionSource = SuggestionSource::Cache;
-
-                applyStateToOverlay();
-                return;
-            }
-        }
-    }
-
     const QVector<ContextItem> contextItems = collectContextItemsForRequest(m_view, doc, m_recentEditsTracker, m_diagnosticStore, settings, promptCtx, cursor, m_generation);
     const PromptAssemblyOptions assemblyOptions = promptAssemblyOptionsFromSettings(settings);
 
@@ -836,6 +1227,7 @@ void EditorSession::startRequest()
     request.model = settings.model;
     request.maxTokens = strategy.maxTokens;
     request.temperature = strategy.temperature;
+    request.n = (manualTrigger && settings.enableCandidateCycling) ? settings.manualCandidateCount : 1;
 
     if (providerIsCopilot) {
         CopilotCodexPrompt built = CopilotCodexPromptBuilder::build(promptCtx, doc, cursor);
@@ -862,6 +1254,64 @@ void EditorSession::startRequest()
         appendStrategyStopSequences(request.stopSequences, strategy.stopSequences);
     }
 
+    const bool cacheEnabled = settings.enableCompletionCache && m_completionCache;
+    const CompletionCacheKey cacheKey = CompletionCache::makeKey(settings,
+                                                                 strategy,
+                                                                 promptCtx,
+                                                                 prefix,
+                                                                 suffix,
+                                                                 request.n,
+                                                                 assembledPromptFingerprint(request, providerIsCopilot),
+                                                                 requestShapeFingerprint(request));
+
+    if (cacheEnabled) {
+        const std::optional<CompletionCacheValue> cached = m_completionCache->lookupExact(cacheKey);
+        if (cached.has_value()) {
+            QVector<CompletionCandidate> candidates;
+            const QVector<CompletionCandidate> cachedCandidates = cached->candidates.isEmpty()
+                ? QVector<CompletionCandidate>{candidateFromProcessed(cached->rawCompletion,
+                                                                       SuggestionPostProcessor::process(cached->rawCompletion, suggestionProcessingContext(doc, cursor)),
+                                                                       QStringLiteral("cache"),
+                                                                       0)}
+                : cached->candidates;
+
+            for (int i = 0; i < cachedCandidates.size(); ++i) {
+                const CompletionCandidate &cachedCandidate = cachedCandidates.at(i);
+                const ProcessedSuggestion processed = SuggestionPostProcessor::process(cachedCandidate.rawCompletion, suggestionProcessingContext(doc, cursor));
+                if (processed.valid) {
+                    CompletionCandidate candidate = candidateFromProcessed(cachedCandidate.rawCompletion, processed, QStringLiteral("cache"), i);
+                    candidate.id = QStringLiteral("cache:%1").arg(i);
+                    candidates.push_back(candidate);
+                }
+            }
+
+            if (!candidates.isEmpty()) {
+                if (m_activeRequestId != 0) {
+                    m_provider->cancel(m_activeRequestId);
+                    m_activeRequestId = 0;
+                }
+
+                m_anchorTracker.attach(doc, cursor);
+                m_state.anchor.generation = m_generation;
+                m_state.anchorTracked = m_anchorTracker.isValid();
+                (void)syncAnchorFromTracker();
+
+                m_acceptedFromSuggestion.clear();
+                m_typedPrefixFromSuggestion.clear();
+                m_activeCandidateRawByIndex.clear();
+                m_activeCacheKey = cacheKey;
+                m_hasActiveCacheKey = true;
+                m_state.streaming = false;
+                m_state.suppressed = false;
+                setCandidatesForCurrentAnchor(candidates);
+                m_suggestionSource = SuggestionSource::Cache;
+
+                applyStateToOverlay();
+                return;
+            }
+        }
+    }
+
     if (m_activeRequestId != 0) {
         m_provider->cancel(m_activeRequestId);
         m_activeRequestId = 0;
@@ -877,6 +1327,12 @@ void EditorSession::startRequest()
     m_state.insertText.clear();
     m_state.replaceRange = KTextEditor::Range::invalid();
     m_state.suffixCoverage = 0;
+    const bool hadCandidates = !m_candidates.isEmpty();
+    m_candidates.clear();
+    if (hadCandidates) {
+        Q_EMIT candidateStateChanged();
+    }
+    m_activeCandidateRawByIndex.clear();
     m_rawSuggestionText.clear();
     m_acceptedFromSuggestion.clear();
     m_typedPrefixFromSuggestion.clear();
@@ -899,14 +1355,21 @@ void EditorSession::clearSuggestion()
     cleared.anchor.generation = m_generation;
     cleared.anchorTracked = false;
     m_state = cleared;
+    const bool hadCandidates = !m_candidates.isEmpty();
+    m_candidates.clear();
+    m_activeCandidateRawByIndex.clear();
     m_rawSuggestionText.clear();
     m_acceptedFromSuggestion.clear();
     m_typedPrefixFromSuggestion.clear();
     m_pendingTypingReuseText.clear();
     m_skippedCursorMoveBeforeTextInsert = false;
+    m_ignoreNextTextInsertedAfterTypingReuse = false;
     m_ignoreNextCursorMoveAfterTypingReuse = false;
     m_hasActiveCacheKey = false;
     m_suggestionSource = SuggestionSource::None;
+    if (hadCandidates) {
+        Q_EMIT candidateStateChanged();
+    }
 
     applyStateToOverlay();
 }
@@ -935,6 +1398,47 @@ void EditorSession::triggerSuggestion()
     m_nextRequestAfterPartialAccept = afterPartialAccept;
     m_nextRequestAfterFullAccept = afterFullAccept;
     startRequest();
+}
+
+void EditorSession::nextCandidate()
+{
+    if (m_candidates.size() <= 1) {
+        triggerSuggestion();
+        return;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        bumpGeneration();
+        return;
+    }
+
+    if (m_candidates.next()) {
+        (void)applyCurrentCandidate();
+        applyStateToOverlay();
+    }
+}
+
+void EditorSession::previousCandidate()
+{
+    if (m_candidates.size() <= 1) {
+        triggerSuggestion();
+        return;
+    }
+
+    if (!syncAnchorFromTracker()) {
+        bumpGeneration();
+        return;
+    }
+
+    if (m_candidates.previous()) {
+        (void)applyCurrentCandidate();
+        applyStateToOverlay();
+    }
+}
+
+int EditorSession::candidateCount() const
+{
+    return m_candidates.size();
 }
 
 void EditorSession::acceptSuggestion()
@@ -979,6 +1483,7 @@ void EditorSession::acceptSuggestion()
         m_ignoreNextViewSignals = 0;
         showError(i18n("Failed to insert AI completion into document"));
     } else {
+        m_view->setCursorPosition(cursorAfterInsertedText(cursor, toInsert));
         m_nextRequestAfterFullAccept = true;
         m_nextRequestAfterPartialAccept = false;
     }
@@ -1050,10 +1555,9 @@ void EditorSession::acceptPartial(const QString &chunk)
         return;
     }
 
-    const KTextEditor::Cursor anchorCursor(m_state.anchor.line, m_state.anchor.column);
-    const ProcessedSuggestion processed = SuggestionPostProcessor::process(remaining, suggestionProcessingContext(doc, anchorCursor));
-    const bool stillVisible = applyProcessedSuggestion(processed);
-    m_suggestionSource = stillVisible ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
+    Q_UNUSED(remaining);
+    filterAndShrinkCandidatesByPrefix(chunk);
+    m_suggestionSource = hasVisibleSuggestion() ? SuggestionSource::TypingAsSuggested : SuggestionSource::None;
 
     applyStateToOverlay();
 }
@@ -1230,6 +1734,7 @@ void EditorSession::ensureProvider(const QString &providerId)
         return;
     }
 
+    cancelSpeculativeRequest();
     m_provider.reset();
     m_providerId = normalized;
 
@@ -1240,6 +1745,7 @@ void EditorSession::ensureProvider(const QString &providerId)
     }
 
     connect(m_provider.get(), &AbstractAIProvider::deltaReceived, this, &EditorSession::onDeltaReceived);
+    connect(m_provider.get(), &AbstractAIProvider::candidateReceived, this, &EditorSession::onCandidateReceived);
     connect(m_provider.get(), &AbstractAIProvider::requestFinished, this, &EditorSession::onRequestFinished);
     connect(m_provider.get(), &AbstractAIProvider::requestFailed, this, &EditorSession::onRequestFailed);
 }
@@ -1289,16 +1795,20 @@ QString EditorSession::extractPrefix(int maxChars) const
 
 QString EditorSession::extractSuffix(int maxChars) const
 {
-    if (!m_view || !m_view->document() || maxChars < 0) {
-        return {};
-    }
+    const KTextEditor::Cursor cursor = m_view ? m_view->cursorPosition() : KTextEditor::Cursor::invalid();
+    return extractSuffixFromCursor(cursor, maxChars);
+}
 
-    if (maxChars == 0) {
+QString EditorSession::extractSuffixFromCursor(const KTextEditor::Cursor &cursor, int maxChars) const
+{
+    if (!m_view || !m_view->document() || maxChars <= 0 || !cursor.isValid()) {
         return {};
     }
 
     KTextEditor::Document *doc = m_view->document();
-    const KTextEditor::Cursor cursor = m_view->cursorPosition();
+    if (cursor.line() < 0 || cursor.line() >= doc->lines()) {
+        return {};
+    }
 
     QString suffix;
     int remaining = maxChars;

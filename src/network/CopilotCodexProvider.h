@@ -23,6 +23,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <QSet>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -53,6 +54,10 @@ private:
         quint64 authAcquireId = 0;
         QPointer<QNetworkReply> reply;
         SSEParser parser;
+        QHash<int, QString> candidateTextByIndex;
+        QSet<int> emittedCandidateIndexes;
+        int expectedCandidateCount = 1;
+        int maxCandidateChars = 32768;
         bool cancelled = false;
         bool finishedNotified = false;
         bool retriedAfterAuth = false;
@@ -60,6 +65,7 @@ private:
 
     void beginNetworkRequest(quint64 requestId, const QString &sessionToken);
     void handleSseData(quint64 requestId, const QString &data);
+    void emitPendingCandidates(quint64 requestId, RequestContext &ctx);
 
     [[nodiscard]] static QByteArray buildAuthorizationHeaderValue(const QString &token);
     static void applyCopilotClientHeaders(QNetworkRequest *req);

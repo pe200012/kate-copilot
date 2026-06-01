@@ -14,8 +14,34 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 
+#include <algorithm>
+
 namespace KateAiInlineCompletion
 {
+
+namespace
+{
+[[nodiscard]] int boundedCandidateCount(int n)
+{
+    return qBound(1, n, 10);
+}
+
+[[nodiscard]] int boundedCandidateChars(int maxTokens)
+{
+    return qBound(4096, maxTokens * 64, 65536);
+}
+
+[[nodiscard]] QString boundedAppend(QString current, const QString &delta, int maxChars)
+{
+    if (delta.isEmpty() || current.size() >= maxChars) {
+        return current;
+    }
+
+    const int remaining = maxChars - current.size();
+    current += delta.left(remaining);
+    return current;
+}
+}
 
 OpenAICompatibleProvider::OpenAICompatibleProvider(QNetworkAccessManager *manager, QObject *parent)
     : AbstractAIProvider(parent)
@@ -46,6 +72,10 @@ quint64 OpenAICompatibleProvider::start(const CompletionRequest &request)
     payload[QStringLiteral("temperature")] = request.temperature;
     payload[QStringLiteral("max_tokens")] = request.maxTokens;
 
+    if (request.n > 1) {
+        payload[QStringLiteral("n")] = request.n;
+    }
+
     if (!request.stopSequences.isEmpty()) {
         payload[QStringLiteral("stop")] = QJsonArray::fromStringList(request.stopSequences);
     }
@@ -67,6 +97,8 @@ quint64 OpenAICompatibleProvider::start(const CompletionRequest &request)
 
     RequestContext ctx;
     ctx.reply = reply;
+    ctx.expectedCandidateCount = boundedCandidateCount(request.n);
+    ctx.maxCandidateChars = boundedCandidateChars(request.maxTokens);
     m_requests.insert(requestId, ctx);
 
     connect(reply, &QNetworkReply::readyRead, this, [this, requestId] {
@@ -100,22 +132,25 @@ quint64 OpenAICompatibleProvider::start(const CompletionRequest &request)
         const QNetworkReply::NetworkError error = reply ? reply->error() : QNetworkReply::UnknownNetworkError;
         const QString errorString = reply ? reply->errorString() : QStringLiteral("Network reply missing");
 
-        m_requests.remove(requestId);
-
         if (finishedNotified) {
+            m_requests.remove(requestId);
             return;
         }
 
         if (cancelled || error == QNetworkReply::OperationCanceledError) {
+            m_requests.remove(requestId);
             Q_EMIT requestFinished(requestId);
             return;
         }
 
         if (error != QNetworkReply::NoError) {
+            m_requests.remove(requestId);
             Q_EMIT requestFailed(requestId, errorString);
             return;
         }
 
+        emitPendingCandidates(requestId, *it);
+        m_requests.remove(requestId);
         Q_EMIT requestFinished(requestId);
     });
 
@@ -154,6 +189,7 @@ void OpenAICompatibleProvider::handleSseData(quint64 requestId, const QString &d
 
     if (trimmed == QStringLiteral("[DONE]")) {
         it->finishedNotified = true;
+        emitPendingCandidates(requestId, *it);
         Q_EMIT requestFinished(requestId);
         return;
     }
@@ -188,18 +224,50 @@ void OpenAICompatibleProvider::handleSseData(quint64 requestId, const QString &d
         return;
     }
 
-    const QJsonObject choice0 = choices.at(0).toObject();
-    const QJsonObject deltaObj = choice0.value(QStringLiteral("delta")).toObject();
-    const QString content = deltaObj.value(QStringLiteral("content")).toString();
+    for (const QJsonValue &choiceValue : choices) {
+        const QJsonObject choice = choiceValue.toObject();
+        const int index = choice.value(QStringLiteral("index")).toInt(0);
+        if (index < 0 || index >= it->expectedCandidateCount) {
+            continue;
+        }
 
-    if (!content.isEmpty()) {
-        Q_EMIT deltaReceived(requestId, content);
+        const QJsonObject deltaObj = choice.value(QStringLiteral("delta")).toObject();
+        const QString content = deltaObj.value(QStringLiteral("content")).toString();
+
+        if (!content.isEmpty()) {
+            const QString before = it->candidateTextByIndex.value(index);
+            const QString after = boundedAppend(before, content, it->maxCandidateChars);
+            it->candidateTextByIndex[index] = after;
+            const QString emitted = after.mid(before.size());
+            if (index == 0 && !emitted.isEmpty()) {
+                Q_EMIT deltaReceived(requestId, emitted);
+            }
+        }
+
+        const QString finishReason = choice.value(QStringLiteral("finish_reason")).toString();
+        if (!finishReason.isEmpty() && !it->emittedCandidateIndexes.contains(index)) {
+            it->emittedCandidateIndexes.insert(index);
+            const QString fullText = it->candidateTextByIndex.value(index);
+            if (!fullText.isEmpty()) {
+                Q_EMIT candidateReceived(requestId, index, fullText);
+            }
+        }
     }
+}
 
-    const QString finishReason = choice0.value(QStringLiteral("finish_reason")).toString();
-    if (!finishReason.isEmpty()) {
-        it->finishedNotified = true;
-        Q_EMIT requestFinished(requestId);
+void OpenAICompatibleProvider::emitPendingCandidates(quint64 requestId, RequestContext &ctx)
+{
+    QList<int> indexes = ctx.candidateTextByIndex.keys();
+    std::sort(indexes.begin(), indexes.end());
+    for (int index : indexes) {
+        if (ctx.emittedCandidateIndexes.contains(index)) {
+            continue;
+        }
+        ctx.emittedCandidateIndexes.insert(index);
+        const QString fullText = ctx.candidateTextByIndex.value(index);
+        if (!fullText.isEmpty()) {
+            Q_EMIT candidateReceived(requestId, index, fullText);
+        }
     }
 }
 

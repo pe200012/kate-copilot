@@ -79,6 +79,7 @@ private:
     void updateContextControlsUi();
     void updateStrategyControlsUi();
     void updateCacheControlsUi();
+    void updateCandidateControlsUi();
     void refreshProviderHint();
     void refreshApiKeyStatus();
     void refreshCopilotStatus();
@@ -126,6 +127,15 @@ private:
     QSpinBox *m_completionCacheTtlMs = nullptr;
     QSpinBox *m_completionCachePrefixTailChars = nullptr;
     QSpinBox *m_completionCacheSuffixHeadChars = nullptr;
+
+    // Candidates
+    QGroupBox *m_candidatesBox = nullptr;
+    QCheckBox *m_enableCandidateCycling = nullptr;
+    QSpinBox *m_manualCandidateCount = nullptr;
+    QSpinBox *m_maxStoredCandidates = nullptr;
+    QCheckBox *m_enableSpeculativeRequests = nullptr;
+    QSpinBox *m_speculativeRequestDelayMs = nullptr;
+    QSpinBox *m_speculativeRequestMaxTokens = nullptr;
 
     // Context
     QGroupBox *m_contextBox = nullptr;

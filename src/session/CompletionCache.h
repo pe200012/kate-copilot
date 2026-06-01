@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include "session/CompletionCandidate.h"
+
 #include <QDateTime>
 #include <QString>
 #include <QVector>
@@ -32,6 +34,9 @@ struct CompletionCacheKey {
     QString copilotNwoHash;
     QString prefixTailHash;
     QString suffixHeadHash;
+    QString assembledPromptHash;
+    QString requestShapeHash;
+    int requestedCandidateCount = 1;
     bool requestMultiline = false;
     QString strategyMode;
 
@@ -42,6 +47,7 @@ struct CompletionCacheValue {
     QString rawCompletion;
     QString processedInsertText;
     QString processedDisplayText;
+    QVector<CompletionCandidate> candidates;
     int suffixCoverage = 0;
     QDateTime createdAt;
     int hitCount = 0;
@@ -53,6 +59,7 @@ struct CompletionCacheOptions {
     int ttlMs = 120000;
     int prefixTailChars = 1200;
     int suffixHeadChars = 600;
+    int maxStoredCandidates = 8;
 };
 
 class CompletionCache final
@@ -74,7 +81,10 @@ public:
                                                     const CompletionStrategy &strategy,
                                                     const PromptContext &promptCtx,
                                                     const QString &prefix,
-                                                    const QString &suffix);
+                                                    const QString &suffix,
+                                                    int requestedCandidateCount = 1,
+                                                    const QString &assembledPromptFingerprint = QString(),
+                                                    const QString &requestShapeFingerprint = QString());
 
 private:
     struct Entry {

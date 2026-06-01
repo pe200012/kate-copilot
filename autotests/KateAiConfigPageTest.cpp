@@ -31,6 +31,7 @@ private Q_SLOTS:
     void contextControlsFollowMasterAndRelatedFileToggles();
     void strategySettingsApplyFromUi();
     void cacheSettingsApplyFromUi();
+    void candidateSettingsApplyFromUi();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -61,6 +62,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *cacheEnabled = page.findChild<QCheckBox *>(QStringLiteral("completionCacheCheckBox"));
     auto *typingReuse = page.findChild<QCheckBox *>(QStringLiteral("typingAsSuggestedCheckBox"));
     auto *cacheMaxEntries = page.findChild<QSpinBox *>(QStringLiteral("completionCacheMaxEntriesSpinBox"));
+    auto *candidateCycling = page.findChild<QCheckBox *>(QStringLiteral("candidateCyclingCheckBox"));
+    auto *manualCandidateCount = page.findChild<QSpinBox *>(QStringLiteral("manualCandidateCountSpinBox"));
+    auto *speculativeRequests = page.findChild<QCheckBox *>(QStringLiteral("speculativeRequestsCheckBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -78,6 +82,9 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(cacheEnabled);
     QVERIFY(typingReuse);
     QVERIFY(cacheMaxEntries);
+    QVERIFY(candidateCycling);
+    QVERIFY(manualCandidateCount);
+    QVERIFY(speculativeRequests);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -268,6 +275,47 @@ void KateAiConfigPageTest::cacheSettingsApplyFromUi()
     QCOMPARE(out.completionCacheTtlMs, 45000);
     QCOMPARE(out.completionCachePrefixTailChars, 900);
     QCOMPARE(out.completionCacheSuffixHeadChars, 300);
+}
+
+void KateAiConfigPageTest::candidateSettingsApplyFromUi()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *candidateCycling = page.findChild<QCheckBox *>(QStringLiteral("candidateCyclingCheckBox"));
+    auto *manualCandidateCount = page.findChild<QSpinBox *>(QStringLiteral("manualCandidateCountSpinBox"));
+    auto *maxStoredCandidates = page.findChild<QSpinBox *>(QStringLiteral("maxStoredCandidatesSpinBox"));
+    auto *speculativeRequests = page.findChild<QCheckBox *>(QStringLiteral("speculativeRequestsCheckBox"));
+    auto *speculativeDelay = page.findChild<QSpinBox *>(QStringLiteral("speculativeRequestDelaySpinBox"));
+    auto *speculativeMaxTokens = page.findChild<QSpinBox *>(QStringLiteral("speculativeRequestMaxTokensSpinBox"));
+
+    QVERIFY(candidateCycling);
+    QVERIFY(manualCandidateCount);
+    QVERIFY(maxStoredCandidates);
+    QVERIFY(speculativeRequests);
+    QVERIFY(speculativeDelay);
+    QVERIFY(speculativeMaxTokens);
+
+    candidateCycling->setChecked(false);
+    manualCandidateCount->setValue(5);
+    maxStoredCandidates->setValue(6);
+    speculativeRequests->setChecked(true);
+    speculativeDelay->setValue(400);
+    speculativeMaxTokens->setValue(88);
+
+    QVERIFY(!manualCandidateCount->isEnabled());
+    QVERIFY(speculativeDelay->isEnabled());
+    QVERIFY(speculativeMaxTokens->isEnabled());
+
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableCandidateCycling, false);
+    QCOMPARE(out.manualCandidateCount, 5);
+    QCOMPARE(out.maxStoredCandidates, 6);
+    QCOMPARE(out.enableSpeculativeRequests, true);
+    QCOMPARE(out.speculativeRequestDelayMs, 400);
+    QCOMPARE(out.speculativeRequestMaxTokens, 88);
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()

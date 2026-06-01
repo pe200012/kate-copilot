@@ -56,6 +56,7 @@ public:
 
 Q_SIGNALS:
     void deltaReceived(quint64 requestId, QString delta);
+    void candidateReceived(quint64 requestId, int index, QString fullText);
     void requestFinished(quint64 requestId);
     void requestFailed(quint64 requestId, QString message);
 };

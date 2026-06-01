@@ -283,6 +283,44 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
                                                KateAiInlineCompletion::CompletionSettings::kCompletionCacheSuffixHeadCharsMax);
     cacheForm->addRow(i18n("Suffix head hash characters"), m_completionCacheSuffixHeadChars);
 
+    m_candidatesBox = new QGroupBox(i18n("Candidates"), this);
+    root->addWidget(m_candidatesBox);
+
+    auto *candidatesForm = new QFormLayout(m_candidatesBox);
+
+    m_enableCandidateCycling = new QCheckBox(i18n("Enable candidate cycling"), m_candidatesBox);
+    m_enableCandidateCycling->setObjectName(QStringLiteral("candidateCyclingCheckBox"));
+    candidatesForm->addRow(m_enableCandidateCycling);
+
+    m_manualCandidateCount = new QSpinBox(m_candidatesBox);
+    m_manualCandidateCount->setObjectName(QStringLiteral("manualCandidateCountSpinBox"));
+    m_manualCandidateCount->setRange(KateAiInlineCompletion::CompletionSettings::kManualCandidateCountMin,
+                                     KateAiInlineCompletion::CompletionSettings::kManualCandidateCountMax);
+    candidatesForm->addRow(i18n("Manual candidate count"), m_manualCandidateCount);
+
+    m_maxStoredCandidates = new QSpinBox(m_candidatesBox);
+    m_maxStoredCandidates->setObjectName(QStringLiteral("maxStoredCandidatesSpinBox"));
+    m_maxStoredCandidates->setRange(KateAiInlineCompletion::CompletionSettings::kMaxStoredCandidatesMin,
+                                    KateAiInlineCompletion::CompletionSettings::kMaxStoredCandidatesMax);
+    candidatesForm->addRow(i18n("Max stored candidates"), m_maxStoredCandidates);
+
+    m_enableSpeculativeRequests = new QCheckBox(i18n("Enable speculative requests"), m_candidatesBox);
+    m_enableSpeculativeRequests->setObjectName(QStringLiteral("speculativeRequestsCheckBox"));
+    candidatesForm->addRow(m_enableSpeculativeRequests);
+
+    m_speculativeRequestDelayMs = new QSpinBox(m_candidatesBox);
+    m_speculativeRequestDelayMs->setObjectName(QStringLiteral("speculativeRequestDelaySpinBox"));
+    m_speculativeRequestDelayMs->setRange(KateAiInlineCompletion::CompletionSettings::kSpeculativeRequestDelayMinMs,
+                                          KateAiInlineCompletion::CompletionSettings::kSpeculativeRequestDelayMaxMs);
+    m_speculativeRequestDelayMs->setSuffix(i18n(" ms"));
+    candidatesForm->addRow(i18n("Speculative request delay"), m_speculativeRequestDelayMs);
+
+    m_speculativeRequestMaxTokens = new QSpinBox(m_candidatesBox);
+    m_speculativeRequestMaxTokens->setObjectName(QStringLiteral("speculativeRequestMaxTokensSpinBox"));
+    m_speculativeRequestMaxTokens->setRange(KateAiInlineCompletion::CompletionSettings::kSpeculativeRequestMaxTokensMin,
+                                            KateAiInlineCompletion::CompletionSettings::kSpeculativeRequestMaxTokensMax);
+    candidatesForm->addRow(i18n("Speculative request max tokens"), m_speculativeRequestMaxTokens);
+
     m_contextBox = new QGroupBox(i18n("Context"), this);
     root->addWidget(m_contextBox);
 
@@ -481,6 +519,13 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     connect(m_completionCachePrefixTailChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_completionCacheSuffixHeadChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
 
+    connect(m_enableCandidateCycling, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_manualCandidateCount, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_maxStoredCandidates, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableSpeculativeRequests, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_speculativeRequestDelayMs, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_speculativeRequestMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+
     connect(m_enableContextualPrompt, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextItems, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
@@ -585,6 +630,7 @@ void KateAiConfigPage::slotUiChanged()
     updateContextControlsUi();
     updateStrategyControlsUi();
     updateCacheControlsUi();
+    updateCandidateControlsUi();
     setChanged(true);
 }
 
@@ -816,9 +862,17 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_completionCachePrefixTailChars->setValue(v.completionCachePrefixTailChars);
     m_completionCacheSuffixHeadChars->setValue(v.completionCacheSuffixHeadChars);
 
+    m_enableCandidateCycling->setChecked(v.enableCandidateCycling);
+    m_manualCandidateCount->setValue(v.manualCandidateCount);
+    m_maxStoredCandidates->setValue(v.maxStoredCandidates);
+    m_enableSpeculativeRequests->setChecked(v.enableSpeculativeRequests);
+    m_speculativeRequestDelayMs->setValue(v.speculativeRequestDelayMs);
+    m_speculativeRequestMaxTokens->setValue(v.speculativeRequestMaxTokens);
+
     updateContextControlsUi();
     updateStrategyControlsUi();
     updateCacheControlsUi();
+    updateCandidateControlsUi();
     updateCredentialsUi();
 }
 
@@ -863,6 +917,13 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.completionCacheTtlMs = m_completionCacheTtlMs->value();
     s.completionCachePrefixTailChars = m_completionCachePrefixTailChars->value();
     s.completionCacheSuffixHeadChars = m_completionCacheSuffixHeadChars->value();
+
+    s.enableCandidateCycling = m_enableCandidateCycling->isChecked();
+    s.manualCandidateCount = m_manualCandidateCount->value();
+    s.maxStoredCandidates = m_maxStoredCandidates->value();
+    s.enableSpeculativeRequests = m_enableSpeculativeRequests->isChecked();
+    s.speculativeRequestDelayMs = m_speculativeRequestDelayMs->value();
+    s.speculativeRequestMaxTokens = m_speculativeRequestMaxTokens->value();
 
     s.copilotClientId = m_copilotClientId->text().trimmed();
     s.copilotNwo = m_copilotNwo->text().trimmed();
@@ -926,6 +987,22 @@ void KateAiConfigPage::updateCacheControlsUi()
     m_completionCacheTtlMs->setEnabled(cacheEnabled);
     m_completionCachePrefixTailChars->setEnabled(cacheEnabled);
     m_completionCacheSuffixHeadChars->setEnabled(cacheEnabled);
+}
+
+void KateAiConfigPage::updateCandidateControlsUi()
+{
+    if (!m_enableCandidateCycling) {
+        return;
+    }
+
+    const bool cyclingEnabled = m_enableCandidateCycling->isChecked();
+    const bool speculationEnabled = m_enableSpeculativeRequests->isChecked();
+
+    m_manualCandidateCount->setEnabled(cyclingEnabled);
+    m_maxStoredCandidates->setEnabled(true);
+    m_enableSpeculativeRequests->setEnabled(true);
+    m_speculativeRequestDelayMs->setEnabled(speculationEnabled);
+    m_speculativeRequestMaxTokens->setEnabled(speculationEnabled);
 }
 
 void KateAiConfigPage::updateCredentialsUi()

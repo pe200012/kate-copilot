@@ -14,11 +14,34 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 
+#include <algorithm>
+
 namespace KateAiInlineCompletion
 {
 
 namespace
 {
+[[nodiscard]] int boundedCandidateCount(int n)
+{
+    return qBound(1, n, 10);
+}
+
+[[nodiscard]] int boundedCandidateChars(int maxTokens)
+{
+    return qBound(4096, maxTokens * 64, 65536);
+}
+
+[[nodiscard]] QString boundedAppend(QString current, const QString &delta, int maxChars)
+{
+    if (delta.isEmpty() || current.size() >= maxChars) {
+        return current;
+    }
+
+    const int remaining = maxChars - current.size();
+    current += delta.left(remaining);
+    return current;
+}
+
 [[nodiscard]] QString classifyCopilotFailure(int statusCode, const QString &detail)
 {
     const QString clean = detail.trimmed();
@@ -67,6 +90,8 @@ quint64 CopilotCodexProvider::start(const CompletionRequest &request)
 
     RequestContext ctx;
     ctx.request = request;
+    ctx.expectedCandidateCount = boundedCandidateCount(request.n);
+    ctx.maxCandidateChars = boundedCandidateChars(request.maxTokens);
 
     if (!m_authManager) {
         Q_EMIT requestFailed(requestId, QStringLiteral("Copilot auth manager missing"));
@@ -97,6 +122,8 @@ void CopilotCodexProvider::cancel(quint64 requestId)
 
     if (it->reply) {
         it->reply->abort();
+    } else {
+        m_requests.remove(requestId);
     }
 }
 
@@ -305,6 +332,7 @@ void CopilotCodexProvider::beginNetworkRequest(quint64 requestId, const QString 
             return;
         }
 
+        emitPendingCandidates(requestId, *it2);
         Q_EMIT requestFinished(requestId);
         m_requests.remove(requestId);
     });
@@ -328,6 +356,7 @@ void CopilotCodexProvider::handleSseData(quint64 requestId, const QString &data)
 
     if (trimmed == QStringLiteral("[DONE]")) {
         it->finishedNotified = true;
+        emitPendingCandidates(requestId, *it);
         Q_EMIT requestFinished(requestId);
         return;
     }
@@ -362,16 +391,48 @@ void CopilotCodexProvider::handleSseData(quint64 requestId, const QString &data)
         return;
     }
 
-    const QJsonObject choice0 = choices.at(0).toObject();
-    const QString text = choice0.value(QStringLiteral("text")).toString();
-    if (!text.isEmpty()) {
-        Q_EMIT deltaReceived(requestId, text);
-    }
+    for (const QJsonValue &choiceValue : choices) {
+        const QJsonObject choice = choiceValue.toObject();
+        const int index = choice.value(QStringLiteral("index")).toInt(0);
+        if (index < 0 || index >= it->expectedCandidateCount) {
+            continue;
+        }
 
-    const QString finishReason = choice0.value(QStringLiteral("finish_reason")).toString();
-    if (!finishReason.isEmpty()) {
-        it->finishedNotified = true;
-        Q_EMIT requestFinished(requestId);
+        const QString text = choice.value(QStringLiteral("text")).toString();
+        if (!text.isEmpty()) {
+            const QString before = it->candidateTextByIndex.value(index);
+            const QString after = boundedAppend(before, text, it->maxCandidateChars);
+            it->candidateTextByIndex[index] = after;
+            const QString emitted = after.mid(before.size());
+            if (index == 0 && !emitted.isEmpty()) {
+                Q_EMIT deltaReceived(requestId, emitted);
+            }
+        }
+
+        const QString finishReason = choice.value(QStringLiteral("finish_reason")).toString();
+        if (!finishReason.isEmpty() && !it->emittedCandidateIndexes.contains(index)) {
+            it->emittedCandidateIndexes.insert(index);
+            const QString fullText = it->candidateTextByIndex.value(index);
+            if (!fullText.isEmpty()) {
+                Q_EMIT candidateReceived(requestId, index, fullText);
+            }
+        }
+    }
+}
+
+void CopilotCodexProvider::emitPendingCandidates(quint64 requestId, RequestContext &ctx)
+{
+    QList<int> indexes = ctx.candidateTextByIndex.keys();
+    std::sort(indexes.begin(), indexes.end());
+    for (int index : indexes) {
+        if (ctx.emittedCandidateIndexes.contains(index)) {
+            continue;
+        }
+        ctx.emittedCandidateIndexes.insert(index);
+        const QString fullText = ctx.candidateTextByIndex.value(index);
+        if (!fullText.isEmpty()) {
+            Q_EMIT candidateReceived(requestId, index, fullText);
+        }
     }
 }
 

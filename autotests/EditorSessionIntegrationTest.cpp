@@ -24,14 +24,17 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QPointer>
+#include <QQueue>
 #include <QPushButton>
 #include <QScopedPointer>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVector>
 
 using KateAiInlineCompletion::CompletionCache;
 using KateAiInlineCompletion::CompletionSettings;
@@ -83,8 +86,11 @@ public:
                     socket->write("Connection: close\r\n\r\n");
                     socket->flush();
 
+                    const QList<QByteArray> frames = m_frameQueue.isEmpty() ? m_frames : m_frameQueue.dequeue();
+                    const int frameDelayMs = m_frameDelayQueue.isEmpty() ? m_frameDelayMs : m_frameDelayQueue.dequeue();
+
                     int delayMs = 0;
-                    for (const QByteArray &frame : m_frames) {
+                    for (const QByteArray &frame : frames) {
                         QTimer::singleShot(delayMs, socket, [socket, frame] {
                             if (!socket->isOpen()) {
                                 return;
@@ -92,10 +98,10 @@ public:
                             socket->write(frame);
                             socket->flush();
                         });
-                        delayMs += m_frameDelayMs;
+                        delayMs += frameDelayMs;
                     }
 
-                    QTimer::singleShot(delayMs + m_frameDelayMs, socket, [socket] {
+                    QTimer::singleShot(delayMs + frameDelayMs, socket, [socket] {
                         if (!socket->isOpen()) {
                             return;
                         }
@@ -119,6 +125,29 @@ public:
 
     void setCompletionFrames(const QStringList &texts, int frameDelayMs = 25)
     {
+        m_frames = completionFrames(texts);
+        m_frameDelayMs = frameDelayMs;
+    }
+
+    void enqueueCompletion(const QString &text, int frameDelayMs = 25)
+    {
+        enqueueCompletionFrames({text}, frameDelayMs);
+    }
+
+    void enqueueCompletionFrames(const QStringList &texts, int frameDelayMs = 25)
+    {
+        m_frameQueue.enqueue(completionFrames(texts));
+        m_frameDelayQueue.enqueue(frameDelayMs);
+    }
+
+    void enqueueCompletionChoices(const QVector<QString> &choices, int frameDelayMs = 25)
+    {
+        m_frameQueue.enqueue(completionChoiceFrames(choices));
+        m_frameDelayQueue.enqueue(frameDelayMs);
+    }
+
+    static QList<QByteArray> completionFrames(const QStringList &texts)
+    {
         QList<QByteArray> frames;
         for (const QString &text : texts) {
             QJsonObject delta;
@@ -138,9 +167,38 @@ public:
             frames.push_back(QByteArray("data: ") + payload + QByteArray("\n\n"));
         }
         frames.push_back(QByteArray("data: [DONE]\n\n"));
+        return frames;
+    }
 
-        m_frames = frames;
-        m_frameDelayMs = frameDelayMs;
+    void setCompletionChoices(const QVector<QString> &choices)
+    {
+        m_frames = completionChoiceFrames(choices);
+        m_frameDelayMs = 25;
+    }
+
+    static QList<QByteArray> completionChoiceFrames(const QVector<QString> &choices)
+    {
+        QList<QByteArray> frames;
+        for (int i = 0; i < choices.size(); ++i) {
+            QJsonObject delta;
+            delta[QStringLiteral("content")] = choices.at(i);
+
+            QJsonObject choice;
+            choice[QStringLiteral("index")] = i;
+            choice[QStringLiteral("delta")] = delta;
+            choice[QStringLiteral("finish_reason")] = QStringLiteral("stop");
+
+            QJsonArray choicesArray;
+            choicesArray.append(choice);
+
+            QJsonObject obj;
+            obj[QStringLiteral("choices")] = choicesArray;
+
+            const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+            frames.push_back(QByteArray("data: ") + payload + QByteArray("\n\n"));
+        }
+        frames.push_back(QByteArray("data: [DONE]\n\n"));
+        return frames;
     }
 
 
@@ -165,6 +223,8 @@ private:
     QHash<QTcpSocket *, QByteArray> m_requestBuffer;
     QByteArray m_lastRequestBody;
     QList<QByteArray> m_frames;
+    QQueue<QList<QByteArray>> m_frameQueue;
+    QQueue<int> m_frameDelayQueue;
     int m_frameDelayMs = 25;
     int m_requestCount = 0;
 };
@@ -183,7 +243,7 @@ struct SessionHarness {
     EditorSession *session = nullptr;
     GhostTextOverlayWidget *overlay = nullptr;
 
-    explicit SessionHarness(const QUrl &endpoint)
+    explicit SessionHarness(const QUrl &endpoint, bool initiallyEnabled = true)
         : plugin(nullptr, {})
     {
         window.resize(900, 320);
@@ -205,7 +265,7 @@ struct SessionHarness {
         layout->addWidget(otherFocusWidget);
 
         CompletionSettings settings = CompletionSettings::defaults();
-        settings.enabled = true;
+        settings.enabled = initiallyEnabled;
         settings.debounceMs = CompletionSettings::kDebounceMinMs;
         settings.provider = QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible);
         settings.endpoint = endpoint;
@@ -249,6 +309,11 @@ private Q_SLOTS:
     void promptContextSlotsExcludeCurrentFileMetadataTraits();
     void requestUsesCompletionStrategySettings();
     void afterAcceptRequestUsesAfterAcceptStrategy();
+    void manualTriggerRequestsCandidatesAfterSingleCandidateCache();
+    void manualTriggerRequestsMultipleCandidatesAndCycles();
+    void acceptingAfterCyclingInsertsSelectedCandidate();
+    void partialAcceptAfterCyclingKeepsSelectedCandidate();
+    void speculativeRequestStoresNextSuggestionInCacheOnly();
     void typingPrefixOfVisibleSuggestionKeepsRemainingSuggestionWithoutRequest();
     void typingDuringStreamingKeepsRequestAndUsesLaterDeltas();
     void typingNonmatchingTextClearsSuggestionAndSchedulesRequest();
@@ -417,6 +482,152 @@ void EditorSessionIntegrationTest::afterAcceptRequestUsesAfterAcceptStrategy()
     QCOMPARE(payload.value(QStringLiteral("max_tokens")).toInt(), 55);
 }
 
+void EditorSessionIntegrationTest::manualTriggerRequestsCandidatesAfterSingleCandidateCache()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.enqueueCompletion(QStringLiteral("single\nline"));
+    server.enqueueCompletionChoices({QStringLiteral("first\nline"), QStringLiteral("second\nline"), QStringLiteral("third\nline")});
+    server.setCompletion(QStringLiteral("fallback"));
+
+    SessionHarness harness(server.endpoint(), false);
+    CompletionSettings settings = harness.plugin.settings();
+    settings.enabled = true;
+    settings.enableCandidateCycling = false;
+    harness.plugin.setSettings(settings);
+
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.session->triggerSuggestion();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("single\nline"), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.completionCache.size() >= 1, 2000);
+    const int firstRequestCount = server.requestCount();
+
+    settings.enableCandidateCycling = true;
+    settings.manualCandidateCount = 3;
+    harness.plugin.setSettings(settings);
+    harness.session->triggerSuggestion();
+
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > firstRequestCount, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.session->candidateCount(), 3, 2000);
+    const QJsonDocument document = QJsonDocument::fromJson(server.lastRequestBody());
+    QVERIFY(document.isObject());
+    QCOMPARE(document.object().value(QStringLiteral("n")).toInt(), 3);
+}
+
+void EditorSessionIntegrationTest::manualTriggerRequestsMultipleCandidatesAndCycles()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletionChoices({QStringLiteral("first\nline"), QStringLiteral("second\nline"), QStringLiteral("third\nline")});
+
+    SessionHarness harness(server.endpoint());
+    QSignalSpy candidateSpy(harness.session, &EditorSession::candidateStateChanged);
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.view->editorWidget()->setFocus();
+
+    harness.session->triggerSuggestion();
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.session->candidateCount(), 3, 2000);
+    QVERIFY(candidateSpy.count() > 0);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("first\nline"), 2000);
+
+    const QJsonDocument document = QJsonDocument::fromJson(server.lastRequestBody());
+    QVERIFY(document.isObject());
+    QCOMPARE(document.object().value(QStringLiteral("n")).toInt(), 3);
+
+    harness.session->nextCandidate();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+
+    harness.session->nextCandidate();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("third\nline"), 2000);
+
+    harness.session->previousCandidate();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+}
+
+void EditorSessionIntegrationTest::acceptingAfterCyclingInsertsSelectedCandidate()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletionChoices({QStringLiteral("first\nline"), QStringLiteral("second\nline")});
+
+    SessionHarness harness(server.endpoint());
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.view->editorWidget()->setFocus();
+
+    harness.session->triggerSuggestion();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.session->candidateCount(), 2, 2000);
+
+    harness.session->nextCandidate();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+    harness.session->acceptFullSuggestion();
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixsecond\nlineSUFFIX")), 2000);
+}
+
+void EditorSessionIntegrationTest::partialAcceptAfterCyclingKeepsSelectedCandidate()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setCompletionChoices({QStringLiteral("shared first\nline"), QStringLiteral("shared second\nline")});
+
+    SessionHarness harness(server.endpoint(), false);
+    CompletionSettings settings = harness.plugin.settings();
+    settings.enabled = true;
+    settings.enableCandidateCycling = true;
+    harness.plugin.setSettings(settings);
+
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.session->triggerSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > 0, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.session->candidateCount(), 2, 2000);
+
+    harness.session->nextCandidate();
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("shared second\nline"), 2000);
+
+    harness.session->acceptNextWord();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixshared SUFFIX")), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+}
+
+void EditorSessionIntegrationTest::speculativeRequestStoresNextSuggestionInCacheOnly()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.enqueueCompletion(QStringLiteral("first\nline"));
+    server.enqueueCompletion(QStringLiteral("second\nline"));
+    server.setCompletion(QStringLiteral("network-fallback"));
+
+    SessionHarness harness(server.endpoint(), false);
+    CompletionSettings settings = harness.plugin.settings();
+    settings.enabled = true;
+    settings.enableSpeculativeRequests = true;
+    settings.speculativeRequestDelayMs = 0;
+    settings.speculativeRequestMaxTokens = 32;
+    settings.enableCompletionCache = true;
+    settings.afterAcceptMaxTokens = 32;
+    settings.enableCandidateCycling = false;
+    harness.plugin.setSettings(settings);
+
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.session->triggerSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() > 0, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("first\nline"), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestCount() >= 2, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.completionCache.size() >= 2, 2000);
+    QCOMPARE(harness.overlay->state().visibleText, QStringLiteral("first\nline"));
+
+    const int requestCountAfterSpeculation = server.requestCount();
+    harness.session->acceptFullSuggestion();
+    harness.session->triggerSuggestion();
+
+    QTest::qWait(100);
+    QCOMPARE(server.requestCount(), requestCountAfterSpeculation);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+}
+
 void EditorSessionIntegrationTest::typingPrefixOfVisibleSuggestionKeepsRemainingSuggestionWithoutRequest()
 {
     FakeSseServer server;
@@ -454,6 +665,8 @@ void EditorSessionIntegrationTest::typingDuringStreamingKeepsRequestAndUsesLater
     QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixghostSUFFIX")), 2000);
     QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 3000);
     QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("\nTail"), 3000);
+    QTest::qWait(100);
+    QCOMPARE(harness.completionCache.size(), 0);
     QCOMPARE(server.requestCount(), initialRequests);
 }
 
@@ -481,6 +694,9 @@ void EditorSessionIntegrationTest::cachedSuggestionCanBeShownWithoutProviderRequ
     server.setCompletion(QStringLiteral("cachedGhost"));
 
     SessionHarness harness(server.endpoint());
+    CompletionSettings settings = harness.plugin.settings();
+    settings.enableCandidateCycling = false;
+    harness.plugin.setSettings(settings);
     waitForSuggestion(server, harness.view, harness.session);
     QTRY_COMPARE_WITH_TIMEOUT(server.requestCount(), 1, 2000);
     QTest::qWait(100);

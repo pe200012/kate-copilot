@@ -8,6 +8,7 @@
 #include "session/CompletionCache.h"
 
 #include "prompt/PromptTemplate.h"
+#include "session/CompletionCandidate.h"
 #include "session/CompletionStrategy.h"
 #include "settings/CompletionSettings.h"
 
@@ -19,6 +20,7 @@ using KateAiInlineCompletion::CompletionCache;
 using KateAiInlineCompletion::CompletionCacheKey;
 using KateAiInlineCompletion::CompletionCacheOptions;
 using KateAiInlineCompletion::CompletionCacheValue;
+using KateAiInlineCompletion::CompletionCandidate;
 using KateAiInlineCompletion::CompletionSettings;
 using KateAiInlineCompletion::CompletionStrategy;
 using KateAiInlineCompletion::PromptContext;
@@ -54,6 +56,17 @@ CompletionCacheValue baseValue(QString text = QStringLiteral("ghostText"))
     value.createdAt = QDateTime::currentDateTimeUtc();
     return value;
 }
+
+CompletionCandidate candidate(QString text, QString source = QStringLiteral("test"))
+{
+    CompletionCandidate c;
+    c.rawCompletion = text;
+    c.insertText = text;
+    c.displayText = text;
+    c.source = source;
+    c.id = QStringLiteral("%1:%2").arg(source, text);
+    return c;
+}
 }
 
 class CompletionCacheTest : public QObject
@@ -68,8 +81,14 @@ private Q_SLOTS:
     void endpointAndCopilotNwoDifferencesMiss();
     void prefixTailHashDifferencesMiss();
     void suffixHeadHashDifferencesMiss();
+    void assembledPromptFingerprintDifferencesMiss();
+    void requestedCandidateCountDifferencesMiss();
     void disabledCacheStoresNothing();
     void clearRemovesEntries();
+    void storesMultipleCandidates();
+    void maxStoredCandidatesIsRespected();
+    void candidateDedupAppliesOnInsert();
+    void typingAsSuggestedLookupWorksWithCandidateList();
     void typingAsSuggestedLookupReturnsRemainingCompletion();
     void typingAsSuggestedRejectsNonmatchingPrefix();
 };
@@ -212,6 +231,66 @@ void CompletionCacheTest::suffixHeadHashDifferencesMiss()
     QVERIFY(!cache.lookupExact(second).has_value());
 }
 
+void CompletionCacheTest::assembledPromptFingerprintDifferencesMiss()
+{
+    CompletionSettings settings = CompletionSettings::defaults().validated();
+    CompletionStrategy strategy;
+    PromptContext ctx;
+    ctx.language = QStringLiteral("C++");
+    ctx.filePath = QStringLiteral("/repo/src/main.cpp");
+
+    const CompletionCacheKey first = CompletionCache::makeKey(settings,
+                                                              strategy,
+                                                              ctx,
+                                                              QStringLiteral("same-prefix"),
+                                                              QStringLiteral("same-suffix"),
+                                                              1,
+                                                              QStringLiteral("context-a"),
+                                                              QStringLiteral("shape"));
+    const CompletionCacheKey second = CompletionCache::makeKey(settings,
+                                                               strategy,
+                                                               ctx,
+                                                               QStringLiteral("same-prefix"),
+                                                               QStringLiteral("same-suffix"),
+                                                               1,
+                                                               QStringLiteral("context-b"),
+                                                               QStringLiteral("shape"));
+
+    CompletionCache cache;
+    cache.insert(first, baseValue());
+    QVERIFY(!cache.lookupExact(second).has_value());
+}
+
+void CompletionCacheTest::requestedCandidateCountDifferencesMiss()
+{
+    CompletionSettings settings = CompletionSettings::defaults().validated();
+    CompletionStrategy strategy;
+    PromptContext ctx;
+    ctx.language = QStringLiteral("C++");
+    ctx.filePath = QStringLiteral("/repo/src/main.cpp");
+
+    const CompletionCacheKey automatic = CompletionCache::makeKey(settings,
+                                                                  strategy,
+                                                                  ctx,
+                                                                  QStringLiteral("same-prefix"),
+                                                                  QStringLiteral("same-suffix"),
+                                                                  1,
+                                                                  QStringLiteral("context"),
+                                                                  QStringLiteral("shape-n1"));
+    const CompletionCacheKey manual = CompletionCache::makeKey(settings,
+                                                               strategy,
+                                                               ctx,
+                                                               QStringLiteral("same-prefix"),
+                                                               QStringLiteral("same-suffix"),
+                                                               3,
+                                                               QStringLiteral("context"),
+                                                               QStringLiteral("shape-n3"));
+
+    CompletionCache cache;
+    cache.insert(automatic, baseValue());
+    QVERIFY(!cache.lookupExact(manual).has_value());
+}
+
 void CompletionCacheTest::disabledCacheStoresNothing()
 {
     CompletionCacheOptions options;
@@ -232,6 +311,68 @@ void CompletionCacheTest::clearRemovesEntries()
     cache.clear();
     QCOMPARE(cache.size(), 0);
     QVERIFY(!cache.lookupExact(baseKey()).has_value());
+}
+
+void CompletionCacheTest::storesMultipleCandidates()
+{
+    CompletionCache cache;
+    CompletionCacheValue value = baseValue(QStringLiteral("alpha"));
+    value.candidates = {candidate(QStringLiteral("alpha")), candidate(QStringLiteral("beta"))};
+
+    cache.insert(baseKey(), value);
+
+    const auto hit = cache.lookupExact(baseKey());
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->candidates.size(), 2);
+    QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("alpha"));
+    QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("beta"));
+    QCOMPARE(hit->processedDisplayText, QStringLiteral("alpha"));
+}
+
+void CompletionCacheTest::maxStoredCandidatesIsRespected()
+{
+    CompletionCacheOptions options;
+    options.maxStoredCandidates = 2;
+    CompletionCache cache(options);
+
+    CompletionCacheValue value = baseValue(QStringLiteral("alpha"));
+    value.candidates = {candidate(QStringLiteral("alpha")), candidate(QStringLiteral("beta")), candidate(QStringLiteral("gamma"))};
+    cache.insert(baseKey(), value);
+
+    const auto hit = cache.lookupExact(baseKey());
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->candidates.size(), 2);
+    QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("alpha"));
+    QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("beta"));
+}
+
+void CompletionCacheTest::candidateDedupAppliesOnInsert()
+{
+    CompletionCache cache;
+    CompletionCacheValue value = baseValue(QStringLiteral("alpha"));
+    value.candidates = {candidate(QStringLiteral("alpha  \r\n beta")), candidate(QStringLiteral(" alpha\n beta  ")), candidate(QStringLiteral("gamma"))};
+    cache.insert(baseKey(), value);
+
+    const auto hit = cache.lookupExact(baseKey());
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->candidates.size(), 2);
+    QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("alpha  \r\n beta"));
+    QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("gamma"));
+}
+
+void CompletionCacheTest::typingAsSuggestedLookupWorksWithCandidateList()
+{
+    CompletionCache cache;
+    CompletionCacheValue value = baseValue(QStringLiteral("ghostAlpha"));
+    value.candidates = {candidate(QStringLiteral("ghostAlpha")), candidate(QStringLiteral("ghostBeta")), candidate(QStringLiteral("other"))};
+    cache.insert(baseKey(), value);
+
+    const auto hit = cache.lookupTypingAsSuggested(baseKey(), QStringLiteral("ghost"));
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->candidates.size(), 2);
+    QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("Alpha"));
+    QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("Beta"));
+    QCOMPARE(hit->processedDisplayText, QStringLiteral("Alpha"));
 }
 
 void CompletionCacheTest::typingAsSuggestedLookupReturnsRemainingCompletion()

@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "session/CompletionCandidateList.h"
 #include "session/CompletionCache.h"
 #include "session/GhostTextState.h"
 #include "session/SuggestionAnchorTracker.h"
@@ -21,7 +22,9 @@
 #include <KTextEditor/Document>
 
 #include <QObject>
+#include <QHash>
 #include <QPointer>
+#include <QSet>
 #include <QTimer>
 #include <QUrl>
 
@@ -75,9 +78,14 @@ public:
     void acceptNextLine();
     void dismissSuggestion();
     void triggerSuggestion();
+    void nextCandidate();
+    void previousCandidate();
+
+    [[nodiscard]] int candidateCount() const;
 
 Q_SIGNALS:
     void suggestionVisibilityChanged(bool visible);
+    void candidateStateChanged();
 
 private Q_SLOTS:
     void onTextInserted(KTextEditor::View *view, KTextEditor::Cursor position, const QString &text);
@@ -88,6 +96,7 @@ private Q_SLOTS:
     void onDebounceTimeout();
 
     void onDeltaReceived(quint64 requestId, const QString &delta);
+    void onCandidateReceived(quint64 requestId, int index, const QString &fullText);
     void onRequestFinished(quint64 requestId);
     void onRequestFailed(quint64 requestId, const QString &message);
     void onDocumentTextChanged(KTextEditor::Document *document);
@@ -103,6 +112,15 @@ private:
     void acceptPartial(const QString &chunk);
     [[nodiscard]] bool tryReuseVisibleSuggestionForTypedText(const QString &text);
     [[nodiscard]] bool applyProcessedSuggestion(const ProcessedSuggestion &processed);
+    [[nodiscard]] CompletionCandidate candidateFromProcessed(const QString &raw, const ProcessedSuggestion &processed, const QString &source, int index) const;
+    void setCandidatesForCurrentAnchor(QVector<CompletionCandidate> candidates);
+    [[nodiscard]] bool applyCurrentCandidate();
+    void replaceCurrentCandidateWithProcessed(const QString &raw, const ProcessedSuggestion &processed, const QString &source);
+    void filterAndShrinkCandidatesByPrefix(const QString &prefix);
+    void scheduleSpeculativeRequestIfEnabled(const CompletionSettings &settings);
+    void startSpeculativeRequest();
+    void cancelSpeculativeRequest();
+    void finishSpeculativeRequest();
 
     void setSuppressed(bool suppressed);
 
@@ -122,6 +140,7 @@ private:
 
     [[nodiscard]] QString extractPrefix(int maxChars) const;
     [[nodiscard]] QString extractSuffix(int maxChars) const;
+    [[nodiscard]] QString extractSuffixFromCursor(const KTextEditor::Cursor &cursor, int maxChars) const;
     [[nodiscard]] bool isLocalEndpoint(const QUrl &url) const;
 
     QPointer<KTextEditor::View> m_view;
@@ -144,6 +163,12 @@ private:
 
     GhostTextState m_state;
     SuggestionAnchorTracker m_anchorTracker;
+    CompletionCandidateList m_candidates;
+    QHash<int, QString> m_activeCandidateRawByIndex;
+    QTimer m_speculativeTimer;
+    quint64 m_speculativeRequestId = 0;
+    CompletionCacheKey m_speculativeCacheKey;
+    QHash<int, QString> m_speculativeCandidateRawByIndex;
     QString m_rawSuggestionText;
     QString m_acceptedFromSuggestion;
     QString m_typedPrefixFromSuggestion;
@@ -167,6 +192,7 @@ private:
     quint64 m_activeRequestId = 0;
 
     int m_ignoreNextViewSignals = 0;
+    bool m_ignoreNextTextInsertedAfterTypingReuse = false;
     bool m_ignoreNextCursorMoveAfterTypingReuse = false;
     bool m_skippedCursorMoveBeforeTextInsert = false;
     bool m_lastSuggestionVisible = false;

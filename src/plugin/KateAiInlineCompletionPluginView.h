@@ -77,6 +77,8 @@ private:
     QAction *m_acceptNextLineAction = nullptr;
     QAction *m_dismissAction = nullptr;
     QAction *m_triggerAction = nullptr;
+    QAction *m_nextCandidateAction = nullptr;
+    QAction *m_previousCandidateAction = nullptr;
 
     QHash<KTextEditor::View *, KateAiInlineCompletion::EditorSession *> m_sessions;
 };
