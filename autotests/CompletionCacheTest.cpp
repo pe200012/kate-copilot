@@ -47,16 +47,6 @@ CompletionCacheKey baseKey()
     return CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
 }
 
-CompletionCacheValue baseValue(QString text = QStringLiteral("ghostText"))
-{
-    CompletionCacheValue value;
-    value.rawCompletion = text;
-    value.processedInsertText = text;
-    value.processedDisplayText = text;
-    value.createdAt = QDateTime::currentDateTimeUtc();
-    return value;
-}
-
 CompletionCandidate candidate(QString text, QString source = QStringLiteral("test"))
 {
     CompletionCandidate c;
@@ -66,6 +56,14 @@ CompletionCandidate candidate(QString text, QString source = QStringLiteral("tes
     c.source = source;
     c.id = QStringLiteral("%1:%2").arg(source, text);
     return c;
+}
+
+CompletionCacheValue baseValue(QString text = QStringLiteral("ghostText"))
+{
+    CompletionCacheValue value;
+    value.candidates = {candidate(text)};
+    value.createdAt = QDateTime::currentDateTimeUtc();
+    return value;
 }
 }
 
@@ -101,9 +99,10 @@ void CompletionCacheTest::exactLookupReturnsInsertedValue()
 
     const auto hit = cache.lookupExact(key);
     QVERIFY(hit.has_value());
-    QCOMPARE(hit->rawCompletion, QStringLiteral("ghostText"));
-    QCOMPARE(hit->processedInsertText, QStringLiteral("ghostText"));
-    QCOMPARE(hit->processedDisplayText, QStringLiteral("ghostText"));
+    QCOMPARE(hit->candidates.size(), 1);
+    QCOMPARE(hit->candidates.constFirst().rawCompletion, QStringLiteral("ghostText"));
+    QCOMPARE(hit->candidates.constFirst().insertText, QStringLiteral("ghostText"));
+    QCOMPARE(hit->candidates.constFirst().displayText, QStringLiteral("ghostText"));
     QCOMPARE(hit->hitCount, 1);
 }
 
@@ -326,7 +325,7 @@ void CompletionCacheTest::storesMultipleCandidates()
     QCOMPARE(hit->candidates.size(), 2);
     QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("alpha"));
     QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("beta"));
-    QCOMPARE(hit->processedDisplayText, QStringLiteral("alpha"));
+    QCOMPARE(hit->candidates.constFirst().displayText, QStringLiteral("alpha"));
 }
 
 void CompletionCacheTest::maxStoredCandidatesIsRespected()
@@ -372,7 +371,7 @@ void CompletionCacheTest::typingAsSuggestedLookupWorksWithCandidateList()
     QCOMPARE(hit->candidates.size(), 2);
     QCOMPARE(hit->candidates.at(0).displayText, QStringLiteral("Alpha"));
     QCOMPARE(hit->candidates.at(1).displayText, QStringLiteral("Beta"));
-    QCOMPARE(hit->processedDisplayText, QStringLiteral("Alpha"));
+    QCOMPARE(hit->candidates.constFirst().displayText, QStringLiteral("Alpha"));
 }
 
 void CompletionCacheTest::typingAsSuggestedLookupReturnsRemainingCompletion()
@@ -383,9 +382,10 @@ void CompletionCacheTest::typingAsSuggestedLookupReturnsRemainingCompletion()
 
     const auto hit = cache.lookupTypingAsSuggested(key, QStringLiteral("ghost"));
     QVERIFY(hit.has_value());
-    QCOMPARE(hit->rawCompletion, QStringLiteral("Text"));
-    QCOMPARE(hit->processedInsertText, QStringLiteral("Text"));
-    QCOMPARE(hit->processedDisplayText, QStringLiteral("Text"));
+    QCOMPARE(hit->candidates.size(), 1);
+    QCOMPARE(hit->candidates.constFirst().rawCompletion, QStringLiteral("Text"));
+    QCOMPARE(hit->candidates.constFirst().insertText, QStringLiteral("Text"));
+    QCOMPARE(hit->candidates.constFirst().displayText, QStringLiteral("Text"));
     QCOMPARE(hit->hitCount, 1);
 }
 

@@ -58,38 +58,9 @@ namespace
     return options;
 }
 
-[[nodiscard]] CompletionCandidate candidateFromLegacyValue(const CompletionCacheValue &value)
-{
-    CompletionCandidate candidate;
-    candidate.rawCompletion = value.rawCompletion;
-    candidate.insertText = value.processedInsertText;
-    candidate.displayText = value.processedDisplayText;
-    candidate.suffixCoverage = value.suffixCoverage;
-    candidate.source = QStringLiteral("cache");
-    candidate.id = value.rawCompletion;
-    return candidate;
-}
-
-void populateLegacyFieldsFromFirstCandidate(CompletionCacheValue *value)
-{
-    if (!value || value->candidates.isEmpty()) {
-        return;
-    }
-
-    const CompletionCandidate &first = value->candidates.constFirst();
-    value->rawCompletion = first.rawCompletion;
-    value->processedInsertText = first.insertText;
-    value->processedDisplayText = first.displayText;
-    value->suffixCoverage = first.suffixCoverage;
-}
-
 [[nodiscard]] QVector<CompletionCandidate> normalizedCandidatesForStorage(const CompletionCacheValue &value, int maxStoredCandidates)
 {
     QVector<CompletionCandidate> candidates = value.candidates;
-    if (candidates.isEmpty()) {
-        candidates.push_back(candidateFromLegacyValue(value));
-    }
-
     candidates = CompletionCandidateList::deduplicated(std::move(candidates));
     if (candidates.size() > maxStoredCandidates) {
         candidates.resize(maxStoredCandidates);
@@ -146,9 +117,8 @@ void CompletionCache::insert(const CompletionCacheKey &key, const CompletionCach
 
     CompletionCacheValue stored = value;
     stored.candidates = normalizedCandidatesForStorage(value, m_options.maxStoredCandidates);
-    populateLegacyFieldsFromFirstCandidate(&stored);
 
-    if (stored.candidates.isEmpty() || stored.rawCompletion.isEmpty() || stored.processedDisplayText.isEmpty() || stored.processedInsertText.isEmpty()) {
+    if (stored.candidates.isEmpty()) {
         return;
     }
 
@@ -226,11 +196,6 @@ std::optional<CompletionCacheValue> CompletionCache::lookupTypingAsSuggested(con
 
     CompletionCacheValue hit = m_entries.at(idx).value;
     hit.candidates = candidates;
-    populateLegacyFieldsFromFirstCandidate(&hit);
-
-    if (hit.processedInsertText.isEmpty() || hit.processedDisplayText.isEmpty()) {
-        return std::nullopt;
-    }
 
     return hit;
 }

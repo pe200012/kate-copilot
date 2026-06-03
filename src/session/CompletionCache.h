@@ -44,11 +44,7 @@ struct CompletionCacheKey {
 };
 
 struct CompletionCacheValue {
-    QString rawCompletion;
-    QString processedInsertText;
-    QString processedDisplayText;
     QVector<CompletionCandidate> candidates;
-    int suffixCoverage = 0;
     QDateTime createdAt;
     int hitCount = 0;
 };

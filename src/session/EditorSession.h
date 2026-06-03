@@ -80,8 +80,11 @@ public:
     void triggerSuggestion();
     void nextCandidate();
     void previousCandidate();
+    void selectNextCandidate();
+    void selectPreviousCandidate();
 
     [[nodiscard]] int candidateCount() const;
+    [[nodiscard]] bool hasMultipleCandidates() const;
 
 Q_SIGNALS:
     void suggestionVisibilityChanged(bool visible);

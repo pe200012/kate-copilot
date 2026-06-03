@@ -27,6 +27,7 @@
 #include <QAction>
 #include <QKeySequence>
 #include <QNetworkAccessManager>
+#include <QStringList>
 #include <QUrl>
 
 namespace
@@ -45,15 +46,56 @@ KateAiInlineCompletion::CompletionCacheOptions completionCacheOptionsFromSetting
 
 QString completionCacheSettingsSignature(const KateAiInlineCompletion::CompletionSettings &settings)
 {
-    return QStringLiteral("%1\u001f%2\u001f%3\u001f%4\u001f%5\u001f%6\u001f%7\u001f%8")
-        .arg(settings.enableCompletionCache ? QStringLiteral("1") : QStringLiteral("0"),
-             settings.provider,
-             settings.model,
-             settings.promptTemplate,
-             settings.endpoint.toString(QUrl::RemoveUserInfo),
-             settings.copilotNwo,
-             QString::number(settings.completionCachePrefixTailChars),
-             QString::number(settings.completionCacheSuffixHeadChars));
+    return QStringList{
+        settings.enableCompletionCache ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.provider,
+        settings.model,
+        settings.promptTemplate,
+        settings.endpoint.toString(QUrl::RemoveUserInfo),
+        settings.copilotNwo,
+        QString::number(settings.completionCachePrefixTailChars),
+        QString::number(settings.completionCacheSuffixHeadChars),
+        QString::number(settings.completionCacheMaxEntries),
+        QString::number(settings.completionCacheTtlMs),
+        QString::number(settings.maxStoredCandidates),
+        settings.enableCompletionStrategy ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.singleLineMaxTokens),
+        QString::number(settings.multilineMaxTokens),
+        QString::number(settings.manualMultilineMaxTokens),
+        QString::number(settings.afterAcceptMaxTokens),
+        QString::number(settings.completionTemperature, 'g', 12),
+        settings.singleLineStopAtNewline ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.enableContextualPrompt ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.maxContextItems),
+        QString::number(settings.maxContextChars),
+        settings.enableOpenTabsContext ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.enableRecentEditsContext ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.recentEditsMaxFiles),
+        QString::number(settings.recentEditsMaxEdits),
+        QString::number(settings.recentEditsDiffContextLines),
+        QString::number(settings.recentEditsMaxCharsPerEdit),
+        QString::number(settings.recentEditsDebounceMs),
+        QString::number(settings.recentEditsMaxLinesPerEdit),
+        QString::number(settings.recentEditsActiveDocDistanceLimitFromCursor),
+        settings.enableDiagnosticsContext ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.diagnosticsMaxItems),
+        QString::number(settings.diagnosticsMaxChars),
+        QString::number(settings.diagnosticsMaxLineDistance),
+        settings.diagnosticsIncludeWarnings ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.diagnosticsIncludeInformation ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.diagnosticsIncludeHints ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.enableRelatedFilesContext ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.relatedFilesMaxFiles),
+        QString::number(settings.relatedFilesMaxChars),
+        QString::number(settings.relatedFilesMaxCharsPerFile),
+        settings.relatedFilesPreferOpenTabs ? QStringLiteral("1") : QStringLiteral("0"),
+        settings.contextExcludePatterns.join(QChar(0x1e)),
+        settings.enableCandidateCycling ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.manualCandidateCount),
+        settings.enableSpeculativeRequests ? QStringLiteral("1") : QStringLiteral("0"),
+        QString::number(settings.speculativeRequestDelayMs),
+        QString::number(settings.speculativeRequestMaxTokens),
+    }.join(QChar(0x1f));
 }
 } // namespace
 
@@ -232,7 +274,7 @@ void KateAiInlineCompletionPluginView::setupActions()
     actionCollection()->setDefaultShortcut(m_nextCandidateAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Down));
     connect(m_nextCandidateAction, &QAction::triggered, this, [this] {
         if (auto *session = activeSession()) {
-            session->nextCandidate();
+            session->selectNextCandidate();
         }
     });
 
@@ -241,7 +283,7 @@ void KateAiInlineCompletionPluginView::setupActions()
     actionCollection()->setDefaultShortcut(m_previousCandidateAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Up));
     connect(m_previousCandidateAction, &QAction::triggered, this, [this] {
         if (auto *session = activeSession()) {
-            session->previousCandidate();
+            session->selectPreviousCandidate();
         }
     });
 
@@ -306,7 +348,7 @@ void KateAiInlineCompletionPluginView::updateActionState()
     auto *session = activeSession();
     const bool hasSession = session != nullptr;
     const bool hasSuggestion = hasSession && session->hasVisibleSuggestion();
-    const bool canCycle = hasSuggestion && session->candidateCount() > 1 && m_plugin && m_plugin->settings().validated().enableCandidateCycling;
+    const bool canCycle = hasSuggestion && session->hasMultipleCandidates() && m_plugin && m_plugin->settings().validated().enableCandidateCycling;
 
     if (m_acceptFullAction) {
         m_acceptFullAction->setEnabled(hasSuggestion);

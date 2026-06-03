@@ -36,14 +36,14 @@ Answer: Automatic completion requests one candidate. This preserves latency and 
 Answer: Add one signal to the provider interface:
 
 ```cpp
-void candidateReceived(quint64 requestId, int index, QString fullText);
+void candidateFinished(quint64 requestId, int index, QString fullText);
 ```
 
-`deltaReceived` remains the streaming path for candidate 0. Providers accumulate full text by choice index and emit `candidateReceived` when a choice finishes or the stream completes.
+`deltaReceived` remains the streaming path for candidate 0. Providers accumulate full text by choice index and emit `candidateFinished` when a choice finishes or the stream completes.
 
 ### Q3: How should cache values evolve?
 
-Answer: `CompletionCacheValue` gains a candidate vector while keeping the existing single-value fields for compatibility inside the cache API. Insertions normalize and deduplicate candidates, cap by `maxStoredCandidates`, then set the first candidate as the legacy single-value fields.
+Answer: `CompletionCacheValue` stores a candidate vector as the canonical cache payload. Insertions normalize and deduplicate candidates, then cap by `maxStoredCandidates`.
 
 ### Q4: What speculative behavior fits this phase?
 
@@ -113,7 +113,7 @@ Deduplication rules:
 Extend `AbstractAIProvider` with:
 
 ```cpp
-void candidateReceived(quint64 requestId, int index, QString fullText);
+void candidateFinished(quint64 requestId, int index, QString fullText);
 ```
 
 Keep `deltaReceived` unchanged. Existing tests and UI continue to depend on first-candidate streaming.
@@ -134,7 +134,7 @@ Streaming parse:
 - Read `index` with default `0`.
 - Append `delta.content` to an accumulator for that index.
 - Emit `deltaReceived(requestId, content)` for index `0` only.
-- Emit `candidateReceived(requestId, index, fullText)` when `finish_reason` is set for that index.
+- Emit `candidateFinished(requestId, index, fullText)` when `finish_reason` is set for that index.
 - Treat `[DONE]` as request completion and emit any accumulated candidates that were not already emitted.
 
 This keeps first-candidate latency unchanged and adds full alternatives after enough chunks arrive.
@@ -153,11 +153,10 @@ QVector<CompletionCandidate> candidates;
 
 `insert()` transforms incoming value:
 
-1. Build candidates from `value.candidates` if present.
-2. If empty, build one candidate from legacy fields.
-3. Deduplicate with `CompletionCandidateList::deduplicated`.
-4. Cap to `options.maxStoredCandidates`.
-5. Populate legacy fields from candidate 0 for `lookupTypingAsSuggested` compatibility.
+1. Read candidates from `value.candidates`.
+2. Deduplicate with `CompletionCandidateList::deduplicated`.
+3. Cap to `options.maxStoredCandidates`.
+4. Skip insertion when the normalized candidate list is empty.
 
 `lookupExact()` returns the candidate list. `lookupTypingAsSuggested()` returns a value with all candidates whose processed text starts with the typed prefix, shrunk by that prefix and deduplicated again.
 
@@ -199,17 +198,17 @@ void cancelSpeculativeRequest();
 
 `startRequest()` flow:
 
-1. Build strategy and cache key.
-2. Try cache lookup.
-3. On cache hit, reprocess raw candidates for current cursor, populate `CompletionCandidateList`, apply current candidate, skip provider start.
-4. On miss, build provider request.
-5. Set `request.n = manualCandidateCount` when `manualTrigger && enableCandidateCycling`.
-6. Set `request.n = 1` for automatic requests.
-7. Start provider.
+1. Build strategy, context items, provider request, and hash-only cache fingerprints.
+2. Set `request.n = manualCandidateCount` when `manualTrigger && enableCandidateCycling`.
+3. Set `request.n = 1` for automatic requests.
+4. Build a cache key from prefix/suffix, provider identity, context/request fingerprints, strategy, and requested candidate count.
+5. Try cache lookup.
+6. On cache hit, reprocess raw candidates for current cursor, populate `CompletionCandidateList`, apply current candidate, skip provider start.
+7. On miss, start provider.
 
 `onDeltaReceived()` continues to process candidate 0 streaming and updates candidate list slot 0.
 
-`onCandidateReceived()` processes a full candidate by index, appends/replaces in the candidate list, deduplicates, and leaves current index stable when possible.
+`onCandidateFinished()`/the provider finished-candidate slot processes a full candidate by index, appends/replaces in the candidate list, deduplicates, and leaves current index stable when possible.
 
 `onRequestFinished()` inserts all valid candidates into cache and schedules speculation when enabled.
 
@@ -312,7 +311,7 @@ Add a compact `Candidates` group in settings UI.
 
 ### Phase 3: Provider Multi-Candidate Signal
 
-1. Add `candidateReceived` signal to `AbstractAIProvider`.
+1. Add `candidateFinished` signal to `AbstractAIProvider`.
 2. Add `n` payload support to OpenAI-compatible provider.
 3. Accumulate OpenAI-compatible choices by index.
 4. Accumulate Copilot choices by index.
@@ -368,7 +367,7 @@ sequenceDiagram
     S->>P: request n=3
     P-->>S: delta candidate 0
     S-->>U: show candidate 0
-    P-->>S: candidateReceived 0..2
+    P-->>S: candidateFinished 0..2
     S->>C: store deduplicated candidates
     U->>S: next candidate
     S-->>U: show candidate 1
@@ -416,8 +415,8 @@ Files added:
 Main implementation points:
 
 - Added `CompletionCandidateList` for deduplicated candidate storage and wraparound cycling.
-- Extended `CompletionCacheValue` with candidate lists and `CompletionCacheOptions::maxStoredCandidates`.
-- Added provider signal `candidateReceived(quint64 requestId, int index, QString fullText)`.
+- Reworked `CompletionCacheValue` as a candidate-list payload with `CompletionCacheOptions::maxStoredCandidates`.
+- Added provider signal `candidateFinished(quint64 requestId, int index, QString fullText)`.
 - Updated OpenAI-compatible and Copilot providers to accumulate streamed choices by `choices[].index` while keeping candidate 0 on `deltaReceived`.
 - Added provider bounds for candidate index count and accumulated candidate text, with deterministic sorted pending emission.
 - Added `EditorSession::nextCandidate()`, `previousCandidate()`, and `candidateCount()`.

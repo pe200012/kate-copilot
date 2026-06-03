@@ -488,6 +488,8 @@ void EditorSession::onTextInserted(KTextEditor::View *view, KTextEditor::Cursor 
 
     if (m_ignoreNextTextInsertedAfterTypingReuse) {
         m_ignoreNextTextInsertedAfterTypingReuse = false;
+        m_pendingTypingReuseText.clear();
+        m_skippedCursorMoveBeforeTextInsert = false;
         return;
     }
 
@@ -513,9 +515,8 @@ void EditorSession::onCursorPositionChanged(KTextEditor::View *view, KTextEditor
     }
 
     if (!m_pendingTypingReuseText.isEmpty() && hasVisibleSuggestion()) {
-        if (tryReuseVisibleSuggestionForTypedText(m_pendingTypingReuseText)) {
-            m_ignoreNextTextInsertedAfterTypingReuse = true;
-        }
+        m_skippedCursorMoveBeforeTextInsert = true;
+        m_pendingTypingReuseText.clear();
         return;
     }
 
@@ -679,11 +680,6 @@ void EditorSession::onRequestFinished(quint64 requestId)
     if (m_completionCache && m_hasActiveCacheKey && m_suggestionSource == SuggestionSource::Network && m_acceptedFromSuggestion.isEmpty() && !m_candidates.isEmpty()) {
         CompletionCacheValue value;
         value.candidates = m_candidates.candidates();
-        const CompletionCandidate current = m_candidates.current();
-        value.rawCompletion = current.rawCompletion;
-        value.processedInsertText = current.insertText;
-        value.processedDisplayText = current.displayText;
-        value.suffixCoverage = current.suffixCoverage;
         value.createdAt = QDateTime::currentDateTimeUtc();
         m_completionCache->insert(m_activeCacheKey, value);
     }
@@ -737,8 +733,10 @@ void EditorSession::onDocumentTextChanged(KTextEditor::Document *document)
         if (oldAnchor.isValid() && newAnchor.isValid() && oldAnchor.line() == newAnchor.line() && newAnchor.column() > oldAnchor.column()) {
             const QString typedText = document->text(KTextEditor::Range(oldAnchor, newAnchor));
             if (!typedText.isEmpty() && m_state.visibleText.startsWith(typedText)) {
-                (void)tryReuseVisibleSuggestionForTypedText(typedText);
-                return;
+                if (tryReuseVisibleSuggestionForTypedText(typedText)) {
+                    m_ignoreNextTextInsertedAfterTypingReuse = true;
+                    return;
+                }
             }
         }
     }
@@ -1268,12 +1266,7 @@ void EditorSession::startRequest()
         const std::optional<CompletionCacheValue> cached = m_completionCache->lookupExact(cacheKey);
         if (cached.has_value()) {
             QVector<CompletionCandidate> candidates;
-            const QVector<CompletionCandidate> cachedCandidates = cached->candidates.isEmpty()
-                ? QVector<CompletionCandidate>{candidateFromProcessed(cached->rawCompletion,
-                                                                       SuggestionPostProcessor::process(cached->rawCompletion, suggestionProcessingContext(doc, cursor)),
-                                                                       QStringLiteral("cache"),
-                                                                       0)}
-                : cached->candidates;
+            const QVector<CompletionCandidate> cachedCandidates = cached->candidates;
 
             for (int i = 0; i < cachedCandidates.size(); ++i) {
                 const CompletionCandidate &cachedCandidate = cachedCandidates.at(i);
@@ -1402,6 +1395,16 @@ void EditorSession::triggerSuggestion()
 
 void EditorSession::nextCandidate()
 {
+    selectNextCandidate();
+}
+
+void EditorSession::previousCandidate()
+{
+    selectPreviousCandidate();
+}
+
+void EditorSession::selectNextCandidate()
+{
     if (m_candidates.size() <= 1) {
         triggerSuggestion();
         return;
@@ -1418,7 +1421,7 @@ void EditorSession::nextCandidate()
     }
 }
 
-void EditorSession::previousCandidate()
+void EditorSession::selectPreviousCandidate()
 {
     if (m_candidates.size() <= 1) {
         triggerSuggestion();
@@ -1439,6 +1442,11 @@ void EditorSession::previousCandidate()
 int EditorSession::candidateCount() const
 {
     return m_candidates.size();
+}
+
+bool EditorSession::hasMultipleCandidates() const
+{
+    return m_candidates.size() > 1;
 }
 
 void EditorSession::acceptSuggestion()
@@ -1745,7 +1753,7 @@ void EditorSession::ensureProvider(const QString &providerId)
     }
 
     connect(m_provider.get(), &AbstractAIProvider::deltaReceived, this, &EditorSession::onDeltaReceived);
-    connect(m_provider.get(), &AbstractAIProvider::candidateReceived, this, &EditorSession::onCandidateReceived);
+    connect(m_provider.get(), &AbstractAIProvider::candidateFinished, this, &EditorSession::onCandidateReceived);
     connect(m_provider.get(), &AbstractAIProvider::requestFinished, this, &EditorSession::onRequestFinished);
     connect(m_provider.get(), &AbstractAIProvider::requestFailed, this, &EditorSession::onRequestFailed);
 }

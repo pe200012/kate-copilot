@@ -414,7 +414,7 @@ void CopilotCodexProvider::handleSseData(quint64 requestId, const QString &data)
             it->emittedCandidateIndexes.insert(index);
             const QString fullText = it->candidateTextByIndex.value(index);
             if (!fullText.isEmpty()) {
-                Q_EMIT candidateReceived(requestId, index, fullText);
+                Q_EMIT candidateFinished(requestId, index, fullText);
             }
         }
     }
@@ -431,7 +431,7 @@ void CopilotCodexProvider::emitPendingCandidates(quint64 requestId, RequestConte
         ctx.emittedCandidateIndexes.insert(index);
         const QString fullText = ctx.candidateTextByIndex.value(index);
         if (!fullText.isEmpty()) {
-            Q_EMIT candidateReceived(requestId, index, fullText);
+            Q_EMIT candidateFinished(requestId, index, fullText);
         }
     }
 }
