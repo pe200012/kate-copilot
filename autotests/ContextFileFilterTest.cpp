@@ -107,6 +107,15 @@ void ContextFileFilterTest::rejectsCommonSecretFilesAndDirectories()
     QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".ssh/id_ed25519")), options));
     QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("certs/prod.pem")), options));
     QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("certs/prod.key")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".aws/credentials")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".aws/config")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".kube/config")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".docker/config.json")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".npmrc")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".netrc")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral(".pypirc")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("credentials.json")), options));
+    QVERIFY(!ContextFileFilter::isAllowedPath(dir.filePath(QStringLiteral("prod-service-account.json")), options));
 }
 
 void ContextFileFilterTest::appliesUserExcludePatterns()

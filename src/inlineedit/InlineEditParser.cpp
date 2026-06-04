@@ -16,6 +16,8 @@
 #include <QStringView>
 #include <QtGlobal>
 
+#include <limits>
+
 namespace KateAiInlineCompletion
 {
 namespace
@@ -27,19 +29,24 @@ namespace
     return text;
 }
 
-[[nodiscard]] QString stripJsonFence(QString response)
+[[nodiscard]] int boundedSize(qsizetype value)
+{
+    return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
+}
+
+[[nodiscard]] QString stripJsonFence(const QString &response)
 {
     QString trimmed = response.trimmed();
     if (!trimmed.startsWith(QStringLiteral("```"))) {
         return trimmed;
     }
 
-    const int firstNewline = trimmed.indexOf(QLatin1Char('\n'));
+    const int firstNewline = boundedSize(trimmed.indexOf(QLatin1Char('\n')));
     if (firstNewline < 0) {
         return trimmed;
     }
 
-    int endFence = trimmed.lastIndexOf(QStringLiteral("```"));
+    const int endFence = boundedSize(trimmed.lastIndexOf(QStringLiteral("```")));
     if (endFence <= firstNewline) {
         return trimmed;
     }
@@ -53,7 +60,7 @@ namespace
         return false;
     }
 
-    const int lineLength = document->line(cursor.line()).size();
+    const int lineLength = boundedSize(document->line(cursor.line()).size());
     return cursor.column() >= 0 && cursor.column() <= lineLength;
 }
 
@@ -122,7 +129,12 @@ InlineEditSuggestion InlineEditParser::parse(const QString &response, KTextEdito
         return out;
     }
 
-    QString newText = normalizeNewlines(edit.value(QStringLiteral("newText")).toString());
+    const QJsonValue newTextValue = edit.value(QStringLiteral("newText"));
+    if (!newTextValue.isString()) {
+        return out;
+    }
+
+    QString newText = normalizeNewlines(newTextValue.toString());
     if (newText.size() > maxNewTextChars) {
         return out;
     }

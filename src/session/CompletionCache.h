@@ -58,6 +58,16 @@ struct CompletionCacheOptions {
     int maxStoredCandidates = 8;
 };
 
+struct CompletionCacheDocumentText {
+    QString prefix;
+    QString suffix;
+};
+
+struct CompletionCacheRequestFingerprints {
+    QString assembledPrompt;
+    QString requestShape;
+};
+
 class CompletionCache final
 {
 public:
@@ -76,11 +86,9 @@ public:
     [[nodiscard]] static CompletionCacheKey makeKey(const CompletionSettings &settings,
                                                     const CompletionStrategy &strategy,
                                                     const PromptContext &promptCtx,
-                                                    const QString &prefix,
-                                                    const QString &suffix,
-                                                    int requestedCandidateCount = 1,
-                                                    const QString &assembledPromptFingerprint = QString(),
-                                                    const QString &requestShapeFingerprint = QString());
+                                                    const CompletionCacheDocumentText &documentText,
+                                                    int requestedCandidateCount,
+                                                    const CompletionCacheRequestFingerprints &fingerprints);
 
 private:
     struct Entry {

@@ -27,6 +27,23 @@ using KateAiInlineCompletion::PromptContext;
 
 namespace
 {
+CompletionCacheKey makeTestKey(const CompletionSettings &settings,
+                               const CompletionStrategy &strategy,
+                               const PromptContext &ctx,
+                               const QString &prefix,
+                               const QString &suffix,
+                               int requestedCandidateCount = 1,
+                               QString assembledPromptFingerprint = QStringLiteral("context"),
+                               QString requestShapeFingerprint = QStringLiteral("shape"))
+{
+    return CompletionCache::makeKey(settings,
+                                    strategy,
+                                    ctx,
+                                    {prefix, suffix},
+                                    requestedCandidateCount,
+                                    {assembledPromptFingerprint, requestShapeFingerprint});
+}
+
 CompletionCacheKey baseKey()
 {
     CompletionSettings settings = CompletionSettings::defaults().validated();
@@ -44,7 +61,7 @@ CompletionCacheKey baseKey()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    return CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
+    return makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
 }
 
 CompletionCandidate candidate(QString text, QString source = QStringLiteral("test"))
@@ -173,22 +190,22 @@ void CompletionCacheTest::endpointAndCopilotNwoDifferencesMiss()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    const CompletionCacheKey first = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
+    const CompletionCacheKey first = makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
     CompletionCache cache;
     cache.insert(first, baseValue());
 
     settings.endpoint = QUrl(QStringLiteral("https://example.invalid/v1/chat/completions"));
-    const CompletionCacheKey endpointChanged = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
+    const CompletionCacheKey endpointChanged = makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
     QVERIFY(!cache.lookupExact(endpointChanged).has_value());
 
     settings.provider = QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
     settings.endpoint = QUrl(QStringLiteral("https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions"));
     settings.copilotNwo = QStringLiteral("first/nwo");
-    const CompletionCacheKey firstNwo = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
+    const CompletionCacheKey firstNwo = makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
     cache.insert(firstNwo, baseValue(QStringLiteral("copilot")));
 
     settings.copilotNwo = QStringLiteral("second/nwo");
-    const CompletionCacheKey secondNwo = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
+    const CompletionCacheKey secondNwo = makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("wxyz-tail"));
     QVERIFY(!cache.lookupExact(secondNwo).has_value());
 }
 
@@ -203,8 +220,8 @@ void CompletionCacheTest::prefixTailHashDifferencesMiss()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    const CompletionCacheKey first = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("same-suffix"));
-    const CompletionCacheKey second = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("abcxef"), QStringLiteral("same-suffix"));
+    const CompletionCacheKey first = makeTestKey(settings, strategy, ctx, QStringLiteral("abcdef"), QStringLiteral("same-suffix"));
+    const CompletionCacheKey second = makeTestKey(settings, strategy, ctx, QStringLiteral("abcxef"), QStringLiteral("same-suffix"));
 
     CompletionCache cache;
     cache.insert(first, baseValue());
@@ -222,8 +239,8 @@ void CompletionCacheTest::suffixHeadHashDifferencesMiss()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    const CompletionCacheKey first = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("same-prefix"), QStringLiteral("abcd-tail"));
-    const CompletionCacheKey second = CompletionCache::makeKey(settings, strategy, ctx, QStringLiteral("same-prefix"), QStringLiteral("abxd-tail"));
+    const CompletionCacheKey first = makeTestKey(settings, strategy, ctx, QStringLiteral("same-prefix"), QStringLiteral("abcd-tail"));
+    const CompletionCacheKey second = makeTestKey(settings, strategy, ctx, QStringLiteral("same-prefix"), QStringLiteral("abxd-tail"));
 
     CompletionCache cache;
     cache.insert(first, baseValue());
@@ -238,7 +255,7 @@ void CompletionCacheTest::assembledPromptFingerprintDifferencesMiss()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    const CompletionCacheKey first = CompletionCache::makeKey(settings,
+    const CompletionCacheKey first = makeTestKey(settings,
                                                               strategy,
                                                               ctx,
                                                               QStringLiteral("same-prefix"),
@@ -246,7 +263,7 @@ void CompletionCacheTest::assembledPromptFingerprintDifferencesMiss()
                                                               1,
                                                               QStringLiteral("context-a"),
                                                               QStringLiteral("shape"));
-    const CompletionCacheKey second = CompletionCache::makeKey(settings,
+    const CompletionCacheKey second = makeTestKey(settings,
                                                                strategy,
                                                                ctx,
                                                                QStringLiteral("same-prefix"),
@@ -268,7 +285,7 @@ void CompletionCacheTest::requestedCandidateCountDifferencesMiss()
     ctx.language = QStringLiteral("C++");
     ctx.filePath = QStringLiteral("/repo/src/main.cpp");
 
-    const CompletionCacheKey automatic = CompletionCache::makeKey(settings,
+    const CompletionCacheKey automatic = makeTestKey(settings,
                                                                   strategy,
                                                                   ctx,
                                                                   QStringLiteral("same-prefix"),
@@ -276,7 +293,7 @@ void CompletionCacheTest::requestedCandidateCountDifferencesMiss()
                                                                   1,
                                                                   QStringLiteral("context"),
                                                                   QStringLiteral("shape-n1"));
-    const CompletionCacheKey manual = CompletionCache::makeKey(settings,
+    const CompletionCacheKey manual = makeTestKey(settings,
                                                                strategy,
                                                                ctx,
                                                                QStringLiteral("same-prefix"),

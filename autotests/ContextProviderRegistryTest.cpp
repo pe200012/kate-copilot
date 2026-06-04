@@ -84,7 +84,8 @@ void writeText(const QString &path, const QString &text)
 {
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-    file.write(text.toUtf8());
+    const QByteArray bytes = text.toUtf8();
+    QCOMPARE(file.write(bytes), bytes.size());
 }
 
 } // namespace

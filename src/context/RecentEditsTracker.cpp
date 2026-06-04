@@ -12,6 +12,8 @@
 #include <QUrl>
 #include <QtGlobal>
 
+#include <limits>
+
 namespace KateAiInlineCompletion
 {
 
@@ -34,11 +36,17 @@ namespace
     return lines.join(QLatin1Char('\n'));
 }
 
+[[nodiscard]] int boundedLineCount(const QStringList &lines)
+{
+    return static_cast<int>(qMin<qsizetype>(lines.size(), std::numeric_limits<int>::max()));
+}
+
 [[nodiscard]] QStringList sliceLines(const QStringList &lines, int start, int endExclusive)
 {
     QStringList out;
-    const int safeStart = qBound(0, start, lines.size());
-    const int safeEnd = qBound(safeStart, endExclusive, lines.size());
+    const int lineCount = boundedLineCount(lines);
+    const int safeStart = qBound(0, start, lineCount);
+    const int safeEnd = qBound(safeStart, endExclusive, lineCount);
     out.reserve(safeEnd - safeStart);
     for (int i = safeStart; i < safeEnd; ++i) {
         out.push_back(lines.at(i));
@@ -80,9 +88,9 @@ RecentEditsTracker::~RecentEditsTracker()
 void RecentEditsTracker::setOptions(const RecentEditsTrackerOptions &options)
 {
     m_options = normalizedOptions(options);
-    for (DocumentState *state : std::as_const(m_documents)) {
-        if (state && state->timer) {
-            state->timer->setInterval(m_options.debounceMs);
+    for (const auto &entry : m_documents) {
+        if (DocumentState *state = entry.second.get()) {
+            state->timer.setInterval(m_options.debounceMs);
         }
     }
     pruneHistory();
@@ -99,63 +107,62 @@ void RecentEditsTracker::trackDocument(KTextEditor::Document *document, const QS
         return;
     }
 
-    if (DocumentState *existing = m_documents.value(document, nullptr)) {
+    const auto existingIt = m_documents.find(document);
+    if (existingIt != m_documents.end()) {
+        DocumentState *existing = existingIt->second.get();
         if (!uriOverride.trimmed().isEmpty()) {
             existing->uriOverride = uriOverride.trimmed();
         }
         return;
     }
 
-    auto *state = new DocumentState;
-    state->document = document;
-    state->uriOverride = uriOverride.trimmed();
-    state->snapshot = captureLines(document);
-    state->timer = new QTimer(this);
-    state->timer->setSingleShot(true);
-    state->timer->setInterval(m_options.debounceMs);
+    auto state = std::make_unique<DocumentState>();
+    DocumentState *statePtr = state.get();
+    statePtr->document = document;
+    statePtr->uriOverride = uriOverride.trimmed();
+    statePtr->snapshot = captureLines(document);
+    statePtr->timer.setSingleShot(true);
+    statePtr->timer.setInterval(m_options.debounceMs);
 
-    connect(state->timer, &QTimer::timeout, this, [this, document] {
+    connect(&statePtr->timer, &QTimer::timeout, this, [this, document] {
         processPendingEdit(document);
     });
 
-    state->textChangedConnection = connect(document, &KTextEditor::Document::textChanged, this, [this, document](KTextEditor::Document *changed) {
+    statePtr->textChangedConnection = connect(document, &KTextEditor::Document::textChanged, this, [this, document](KTextEditor::Document *changed) {
         if (changed == document) {
             onDocumentTextChanged(document);
         }
     });
 
-    state->destroyedConnection = connect(document, &QObject::destroyed, this, [this, document] {
+    statePtr->destroyedConnection = connect(document, &QObject::destroyed, this, [this, document] {
         untrackDocument(document);
     });
 
-    m_documents.insert(document, state);
+    m_documents.emplace(document, std::move(state));
 }
 
 void RecentEditsTracker::untrackDocument(KTextEditor::Document *document)
 {
-    DocumentState *state = m_documents.value(document, nullptr);
-    if (!state) {
+    auto it = m_documents.find(document);
+    if (it == m_documents.end()) {
         return;
     }
 
-    if (state->timer) {
-        state->timer->stop();
-    }
+    DocumentState *state = it->second.get();
+    state->timer.stop();
     if (state->pending && state->document) {
         processPendingEdit(document);
     }
 
-    state = m_documents.take(document);
-    if (!state) {
+    it = m_documents.find(document);
+    if (it == m_documents.end()) {
         return;
     }
+    state = it->second.get();
 
     QObject::disconnect(state->textChangedConnection);
     QObject::disconnect(state->destroyedConnection);
-    if (state->timer) {
-        state->timer->deleteLater();
-    }
-    delete state;
+    m_documents.erase(it);
 }
 
 void RecentEditsTracker::addRecentEdit(const RecentEdit &edit)
@@ -211,12 +218,16 @@ QVector<RecentEdit> RecentEditsTracker::recentEdits() const
 
 void RecentEditsTracker::flushPendingEdits()
 {
-    const QList<KTextEditor::Document *> docs = m_documents.keys();
+    QList<KTextEditor::Document *> docs;
+    docs.reserve(static_cast<qsizetype>(m_documents.size()));
+    for (const auto &entry : m_documents) {
+        docs.push_back(entry.first);
+    }
     for (KTextEditor::Document *document : docs) {
-        if (DocumentState *state = m_documents.value(document, nullptr)) {
-            if (state->timer) {
-                state->timer->stop();
-            }
+        const auto it = m_documents.find(document);
+        if (it != m_documents.end()) {
+            DocumentState *state = it->second.get();
+            state->timer.stop();
             if (state->pending) {
                 processPendingEdit(document);
             }
@@ -226,7 +237,11 @@ void RecentEditsTracker::flushPendingEdits()
 
 void RecentEditsTracker::clear()
 {
-    const QList<KTextEditor::Document *> docs = m_documents.keys();
+    QList<KTextEditor::Document *> docs;
+    docs.reserve(static_cast<qsizetype>(m_documents.size()));
+    for (const auto &entry : m_documents) {
+        docs.push_back(entry.first);
+    }
     for (KTextEditor::Document *document : docs) {
         untrackDocument(document);
     }
@@ -235,33 +250,31 @@ void RecentEditsTracker::clear()
 
 void RecentEditsTracker::onDocumentTextChanged(KTextEditor::Document *document)
 {
-    DocumentState *state = m_documents.value(document, nullptr);
-    if (!state || !state->document) {
+    const auto it = m_documents.find(document);
+    if (it == m_documents.end() || !it->second->document) {
         return;
     }
 
+    DocumentState *state = it->second.get();
     if (state->document->totalCharacters() > m_options.maxDocumentChars) {
         state->snapshot = captureLines(state->document);
         state->pending = false;
-        if (state->timer) {
-            state->timer->stop();
-        }
+        state->timer.stop();
         return;
     }
 
     state->pending = true;
-    if (state->timer) {
-        state->timer->start(m_options.debounceMs);
-    }
+    state->timer.start(m_options.debounceMs);
 }
 
 void RecentEditsTracker::processPendingEdit(KTextEditor::Document *document)
 {
-    DocumentState *state = m_documents.value(document, nullptr);
-    if (!state || !state->document || !state->pending) {
+    const auto it = m_documents.find(document);
+    if (it == m_documents.end() || !it->second->document || !it->second->pending) {
         return;
     }
 
+    DocumentState *state = it->second.get();
     state->pending = false;
     const QStringList before = state->snapshot;
     const QStringList after = captureLines(state->document);
@@ -321,25 +334,28 @@ RecentEdit RecentEditsTracker::buildEdit(const QString &uri, const QStringList &
         return edit;
     }
 
+    const int beforeLineCount = boundedLineCount(before);
+    const int afterLineCount = boundedLineCount(after);
+
     int prefix = 0;
-    while (prefix < before.size() && prefix < after.size() && before.at(prefix) == after.at(prefix)) {
+    while (prefix < beforeLineCount && prefix < afterLineCount && before.at(prefix) == after.at(prefix)) {
         ++prefix;
     }
 
     int suffix = 0;
-    while (suffix < before.size() - prefix && suffix < after.size() - prefix
-           && before.at(before.size() - 1 - suffix) == after.at(after.size() - 1 - suffix)) {
+    while (suffix < beforeLineCount - prefix && suffix < afterLineCount - prefix
+           && before.at(beforeLineCount - 1 - suffix) == after.at(afterLineCount - 1 - suffix)) {
         ++suffix;
     }
 
-    const int oldEndExclusive = before.size() - suffix;
-    const int newEndExclusive = after.size() - suffix;
+    const int oldEndExclusive = beforeLineCount - suffix;
+    const int newEndExclusive = afterLineCount - suffix;
 
     edit.startLine = qMax(0, prefix);
     edit.endLine = qMax(edit.startLine, qMax(oldEndExclusive, newEndExclusive) - 1);
 
     const int beforeContextStart = qMax(0, prefix - m_options.diffContextLines);
-    const int afterContextEnd = qMin(after.size(), newEndExclusive + m_options.diffContextLines);
+    const int afterContextEnd = qMin(afterLineCount, newEndExclusive + m_options.diffContextLines);
 
     const QStringList leadingContext = sliceLines(after, beforeContextStart, prefix);
     const QStringList removedLines = sliceLines(before, prefix, oldEndExclusive);

@@ -7,6 +7,8 @@
 
 #include "network/CopilotCodexProvider.h"
 
+#include "security/SensitiveDataRedactor.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +17,7 @@
 #include <QNetworkRequest>
 
 #include <algorithm>
+#include <utility>
 
 namespace KateAiInlineCompletion
 {
@@ -37,14 +40,19 @@ namespace
         return current;
     }
 
-    const int remaining = maxChars - current.size();
+    const int remaining = maxChars - static_cast<int>(qMin<qsizetype>(current.size(), maxChars));
     current += delta.left(remaining);
     return current;
 }
 
+[[nodiscard]] QString sanitizedErrorDetail(QString detail)
+{
+    return redactSensitiveData(std::move(detail));
+}
+
 [[nodiscard]] QString classifyCopilotFailure(int statusCode, const QString &detail)
 {
-    const QString clean = detail.trimmed();
+    QString clean = sanitizedErrorDetail(detail);
 
     if (statusCode == 401) {
         return clean.isEmpty() ? QStringLiteral("authentication expired") : QStringLiteral("authentication expired: %1").arg(clean);
@@ -84,6 +92,28 @@ CopilotCodexProvider::CopilotCodexProvider(QNetworkAccessManager *manager, Copil
     }
 }
 
+CopilotCodexProvider::~CopilotCodexProvider()
+{
+    for (auto it = m_requests.begin(); it != m_requests.end(); ++it) {
+        if (it->authAcquireId != 0 && m_authManager) {
+            m_authManager->cancelAcquire(it->authAcquireId);
+            it->authAcquireId = 0;
+        }
+
+        if (!it->reply) {
+            continue;
+        }
+
+        QObject::disconnect(it->reply, nullptr, this, nullptr);
+        it->reply->abort();
+        it->reply->deleteLater();
+        it->reply = nullptr;
+    }
+
+    m_acquireIdToRequestId.clear();
+    m_requests.clear();
+}
+
 quint64 CopilotCodexProvider::start(const CompletionRequest &request)
 {
     const quint64 requestId = m_nextRequestId++;
@@ -94,7 +124,9 @@ quint64 CopilotCodexProvider::start(const CompletionRequest &request)
     ctx.maxCandidateChars = boundedCandidateChars(request.maxTokens);
 
     if (!m_authManager) {
-        Q_EMIT requestFailed(requestId, QStringLiteral("Copilot auth manager missing"));
+        QMetaObject::invokeMethod(this, [this, requestId] {
+            Q_EMIT requestFailed(requestId, QStringLiteral("Copilot auth manager missing"));
+        }, Qt::QueuedConnection);
         return requestId;
     }
 
@@ -312,11 +344,11 @@ void CopilotCodexProvider::beginNetworkRequest(quint64 requestId, const QString 
             }
 
             if (detail.trimmed().isEmpty()) {
-                detail = QString::fromUtf8(responseBody).trimmed();
+                detail = sanitizedErrorDetail(QString::fromUtf8(responseBody));
             }
 
             if (detail.trimmed().isEmpty()) {
-                detail = errorString;
+                detail = sanitizedErrorDetail(errorString);
             }
 
             const QString classified = classifyCopilotFailure(statusCode, detail);
@@ -327,7 +359,7 @@ void CopilotCodexProvider::beginNetworkRequest(quint64 requestId, const QString 
         }
 
         if (error != QNetworkReply::NoError) {
-            Q_EMIT requestFailed(requestId, errorString);
+            Q_EMIT requestFailed(requestId, sanitizedErrorDetail(errorString));
             m_requests.remove(requestId);
             return;
         }
@@ -376,7 +408,7 @@ void CopilotCodexProvider::handleSseData(quint64 requestId, const QString &data)
 
     if (obj.contains(QStringLiteral("error"))) {
         const QJsonObject err = obj.value(QStringLiteral("error")).toObject();
-        const QString message = err.value(QStringLiteral("message")).toString(QStringLiteral("Copilot provider error"));
+        const QString message = sanitizedErrorDetail(err.value(QStringLiteral("message")).toString(QStringLiteral("Copilot provider error")));
 
         it->finishedNotified = true;
         Q_EMIT requestFailed(requestId, message);
@@ -391,7 +423,7 @@ void CopilotCodexProvider::handleSseData(quint64 requestId, const QString &data)
         return;
     }
 
-    for (const QJsonValue &choiceValue : choices) {
+    for (const auto &choiceValue : choices) {
         const QJsonObject choice = choiceValue.toObject();
         const int index = choice.value(QStringLiteral("index")).toInt(0);
         if (index < 0 || index >= it->expectedCandidateCount) {

@@ -26,6 +26,7 @@
 #include "render/InlineEditPreviewOverlay.h"
 #include "settings/CompletionSettings.h"
 #include "settings/KWalletSecretStore.h"
+#include "security/SensitiveDataRedactor.h"
 
 #include <KLocalizedString>
 
@@ -34,6 +35,7 @@
 #include <KTextEditor/View>
 
 #include <QNetworkAccessManager>
+#include <QScopedValueRollback>
 #include <QUuid>
 #include <QVariantMap>
 #include <QWidget>
@@ -41,6 +43,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <utility>
 
 namespace KateAiInlineCompletion
 {
@@ -97,7 +100,19 @@ namespace
 [[nodiscard]] QString safeDisplayUrl(QUrl url)
 {
     url.setUserInfo(QString());
-    return url.toDisplayString(QUrl::PreferLocalFile | QUrl::RemoveUserInfo);
+    url.setQuery({});
+    url.setFragment({});
+    return url.toDisplayString(QUrl::PreferLocalFile | QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment);
+}
+
+[[nodiscard]] int boundedSize(qsizetype value)
+{
+    return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
+}
+
+[[nodiscard]] QString sanitizedErrorDetail(QString detail)
+{
+    return redactSensitiveData(std::move(detail));
 }
 } // namespace
 
@@ -166,7 +181,8 @@ InlineEditSession::~InlineEditSession()
     cancelActiveRequest();
     if (m_overlay) {
         m_overlay->clear();
-        delete m_overlay.data();
+        std::unique_ptr<InlineEditPreviewOverlay> overlay(m_overlay.data());
+        overlay->setParent(nullptr);
         m_overlay = nullptr;
     }
 }
@@ -202,7 +218,7 @@ void InlineEditSession::triggerInlineEdit()
         return;
     }
 
-    if (providerIsCopilot && (!m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
+    if (providerIsCopilot && (!m_copilotAuthManager || !m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
         showError(i18n("GitHub Copilot requires OAuth sign-in. Open the plugin settings and sign in."));
         return;
     }
@@ -255,13 +271,12 @@ void InlineEditSession::acceptInlineEdit()
     std::sort(edits.begin(), edits.end(), rangeStartsAfter);
 
     KTextEditor::Document *document = m_view->document();
-    m_ignoreDocumentChange = true;
+    QScopedValueRollback<bool> ignoreDocumentChange(m_ignoreDocumentChange, true);
     KTextEditor::Document::EditingTransaction transaction(document);
     bool ok = true;
     for (const ProposedEdit &edit : std::as_const(edits)) {
         ok = document->replaceText(edit.range, edit.newText) && ok;
     }
-    m_ignoreDocumentChange = false;
 
     if (!ok) {
         showError(i18n("Failed to apply AI inline edit"));
@@ -336,7 +351,7 @@ void InlineEditSession::onRequestFailed(quint64 requestId, const QString &messag
     m_activeRequestId = 0;
     Q_EMIT requestStateChanged(false);
     clearPreview();
-    showError(i18n("AI inline edit request failed: %1", message));
+    showError(i18n("AI inline edit request failed: %1", sanitizedErrorDetail(message)));
 }
 
 void InlineEditSession::onCursorPositionChanged(KTextEditor::View *view, KTextEditor::Cursor cursor)
@@ -471,7 +486,7 @@ KTextEditor::Range InlineEditSession::targetRangeForCurrentState() const
         return KTextEditor::Range::invalid();
     }
 
-    return KTextEditor::Range(line, 0, line, m_view->document()->line(line).size());
+    return KTextEditor::Range(line, 0, line, boundedSize(m_view->document()->line(line).size()));
 }
 
 QString InlineEditSession::documentDisplayPath(KTextEditor::Document *document) const
@@ -508,11 +523,11 @@ QString InlineEditSession::extractPrefixBefore(const KTextEditor::Cursor &cursor
     const QString currentLine = document->line(cursor.line()).left(cursor.column());
     const QString currentPart = currentLine.size() > remaining ? currentLine.right(remaining) : currentLine;
     prefix.prepend(currentPart);
-    remaining -= currentPart.size();
+    remaining -= boundedSize(currentPart.size());
 
     for (int line = cursor.line() - 1; line >= 0 && remaining > 0; --line) {
         const QString text = document->line(line);
-        const int need = text.size() + 1;
+        const int need = boundedSize(text.size()) + 1;
         if (need <= remaining) {
             prefix.prepend(QLatin1Char('\n'));
             prefix.prepend(text);
@@ -540,11 +555,11 @@ QString InlineEditSession::extractSuffixAfter(const KTextEditor::Cursor &cursor,
     const QString currentLine = document->line(cursor.line()).mid(cursor.column());
     const QString currentPart = currentLine.size() > remaining ? currentLine.left(remaining) : currentLine;
     suffix.append(currentPart);
-    remaining -= currentPart.size();
+    remaining -= boundedSize(currentPart.size());
 
     for (int line = cursor.line() + 1; line < document->lines() && remaining > 0; ++line) {
         const QString text = document->line(line);
-        const int need = text.size() + 1;
+        const int need = boundedSize(text.size()) + 1;
         if (need <= remaining) {
             suffix.append(QLatin1Char('\n'));
             suffix.append(text);

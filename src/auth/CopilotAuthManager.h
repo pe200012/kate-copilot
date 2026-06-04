@@ -39,6 +39,7 @@ public:
     explicit CopilotAuthManager(KWalletSecretStore *secretStore,
                                 QNetworkAccessManager *networkManager,
                                 QObject *parent = nullptr);
+    ~CopilotAuthManager() override;
 
     [[nodiscard]] bool hasGitHubOAuthToken() const;
 

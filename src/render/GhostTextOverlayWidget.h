@@ -37,6 +37,7 @@ class GhostTextOverlayWidget final : public QWidget
 
 public:
     GhostTextOverlayWidget(KTextEditor::View *view, QWidget *editorWidget);
+    ~GhostTextOverlayWidget() override;
 
     void setState(const GhostTextState &state);
     [[nodiscard]] GhostTextState state() const;

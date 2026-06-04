@@ -68,6 +68,13 @@ namespace
     return scheme == QStringLiteral("http") || scheme == QStringLiteral("https");
 }
 
+[[nodiscard]] QUrl sanitizedEndpoint(QUrl url)
+{
+    url.setUserInfo({});
+    url.setFragment({});
+    return url;
+}
+
 [[nodiscard]] QStringList normalizedPatterns(const QStringList &patterns)
 {
     QStringList out;
@@ -144,6 +151,7 @@ CompletionSettings CompletionSettings::validated() const
         out.provider = QString::fromLatin1(kProviderOpenAICompatible);
     }
 
+    out.endpoint = sanitizedEndpoint(out.endpoint);
     if (!isAbsoluteHttpUrl(out.endpoint)) {
         out.endpoint = defaultEndpointForProvider(out.provider);
     }
@@ -309,7 +317,7 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("InlineEditCopilotExperimental", v.inlineEditCopilotExperimental);
 
     group.writeEntry("Provider", v.provider);
-    group.writeEntry("Endpoint", v.endpoint.toString());
+    group.writeEntry("Endpoint", v.endpoint.toString(QUrl::RemoveUserInfo | QUrl::RemoveFragment));
     group.writeEntry("Model", v.model);
     group.writeEntry("PromptTemplate", v.promptTemplate);
 

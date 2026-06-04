@@ -12,8 +12,9 @@
 #include <KWallet>
 
 #include <QObject>
-#include <QPointer>
 #include <QString>
+
+#include <memory>
 
 class QWidget;
 
@@ -51,7 +52,7 @@ private:
     void setError(QString message) const;
 
     WId m_windowId = 0;
-    mutable QPointer<KWallet::Wallet> m_wallet;
+    mutable std::unique_ptr<KWallet::Wallet> m_wallet;
     mutable QString m_lastError;
 };
 

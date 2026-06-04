@@ -36,7 +36,7 @@ public:
     void reset();
 
 private:
-    [[nodiscard]] static int findBoundary(const QByteArray &buffer, int *separatorLen);
+    [[nodiscard]] static qsizetype findBoundary(const QByteArray &buffer, qsizetype *separatorLen);
 
     QByteArray m_buffer;
 };

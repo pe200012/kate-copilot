@@ -15,9 +15,22 @@
 #include <QPainter>
 #include <QPalette>
 #include <QWheelEvent>
+#include <QtMath>
+
+#include <limits>
 
 namespace KateAiInlineCompletion
 {
+
+static int boundedSize(qsizetype value)
+{
+    return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
+}
+
+static float averageColorComponent(qreal foreground, qreal background)
+{
+    return static_cast<float>((foreground + background) * 0.5);
+}
 
 static bool hasRenderableMultilineText(const GhostTextState &s)
 {
@@ -30,6 +43,11 @@ static bool hasRenderableMultilineText(const GhostTextState &s)
     }
 
     return s.visibleText.contains(QLatin1Char('\n'));
+}
+
+[[nodiscard]] QSize devicePixelSizeFor(const QSize &logicalSize, qreal devicePixelRatio)
+{
+    return QSize(qCeil(logicalSize.width() * devicePixelRatio), qCeil(logicalSize.height() * devicePixelRatio));
 }
 
 GhostTextPushDownOverlay::GhostTextPushDownOverlay(KTextEditor::View *view, QWidget *editorWidget)
@@ -50,6 +68,13 @@ GhostTextPushDownOverlay::GhostTextPushDownOverlay(KTextEditor::View *view, QWid
     }
 
     setVisible(false);
+}
+
+GhostTextPushDownOverlay::~GhostTextPushDownOverlay()
+{
+    if (m_editorWidget) {
+        m_editorWidget->removeEventFilter(this);
+    }
 }
 
 void GhostTextPushDownOverlay::setState(const GhostTextState &state)
@@ -88,8 +113,9 @@ void GhostTextPushDownOverlay::paintEvent(QPaintEvent *event)
         return;
     }
 
-    const QSize snapshotLogicalSize = m_snapshot.isNull() ? QSize() : m_snapshot.deviceIndependentSize().toSize();
-    if (snapshotLogicalSize != size()) {
+    const qreal dpr = m_editorWidget ? m_editorWidget->devicePixelRatioF() : devicePixelRatioF();
+    const QSize expectedPixelSize = devicePixelSizeFor(size(), dpr);
+    if (m_snapshot.isNull() || m_snapshot.size() != expectedPixelSize || !qFuzzyCompare(m_snapshot.devicePixelRatioF(), dpr)) {
         takeSnapshot();
     }
 
@@ -101,7 +127,7 @@ void GhostTextPushDownOverlay::paintEvent(QPaintEvent *event)
     const int lh = lineHeightPx();
     const QStringList lines = ghostLines();
 
-    const int extraLines = qMax(0, lines.size() - 1);
+    const int extraLines = qMax(0, boundedSize(lines.size()) - 1);
     const int shiftPx = extraLines * lh;
 
     QPainter painter(this);
@@ -138,9 +164,9 @@ void GhostTextPushDownOverlay::paintEvent(QPaintEvent *event)
             painter.restore();
         }
 
-        QColor ghost = QColor::fromRgbF((fg.redF() + bg.redF()) * 0.5,
-                                        (fg.greenF() + bg.greenF()) * 0.5,
-                                        (fg.blueF() + bg.blueF()) * 0.5);
+        QColor ghost = QColor::fromRgbF(averageColorComponent(fg.redF(), bg.redF()),
+                                        averageColorComponent(fg.greenF(), bg.greenF()),
+                                        averageColorComponent(fg.blueF(), bg.blueF()));
         ghost.setAlphaF(0.75);
 
         painter.setPen(ghost);
@@ -222,7 +248,7 @@ void GhostTextPushDownOverlay::takeSnapshot()
     updateGeometryFromParent();
 
     const qreal dpr = m_editorWidget->devicePixelRatioF();
-    const QSize pixelSize = (QSizeF(size()) * dpr).toSize();
+    const QSize pixelSize = devicePixelSizeFor(size(), dpr);
     if (pixelSize.isEmpty()) {
         return;
     }

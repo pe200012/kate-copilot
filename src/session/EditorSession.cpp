@@ -60,6 +60,36 @@ static bool cursorEquals(const KTextEditor::Cursor &a, const SuggestionAnchor &b
     return a.line() == b.line && a.column() == b.column;
 }
 
+static QString safeDisplayUrl(QUrl url)
+{
+    url.setUserInfo({});
+    url.setQuery({});
+    url.setFragment({});
+    return url.toDisplayString(QUrl::PreferLocalFile | QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment);
+}
+
+static int boundedSize(qsizetype value)
+{
+    return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
+}
+
+template<typename QObjectType>
+[[nodiscard]] QString stableObjectId(QObjectType *object, const char *propertyName, const QStringView prefix)
+{
+    if (!object) {
+        return {};
+    }
+
+    const QVariant existing = object->property(propertyName);
+    if (existing.isValid() && !existing.toString().isEmpty()) {
+        return existing.toString();
+    }
+
+    const QString stableId = QStringLiteral("%1:%2").arg(prefix, QUuid::createUuid().toString(QUuid::WithoutBraces));
+    object->setProperty(propertyName, stableId);
+    return stableId;
+}
+
 static QString documentDisplayPath(KTextEditor::Document *doc)
 {
     if (!doc) {
@@ -67,18 +97,15 @@ static QString documentDisplayPath(KTextEditor::Document *doc)
     }
 
     if (doc->url().isValid() && !doc->url().isEmpty()) {
-        return doc->url().toDisplayString(QUrl::PreferLocalFile);
+        return safeDisplayUrl(doc->url());
     }
 
-    static constexpr const char *kStableUntitledDocumentIdProperty = "_kate_ai_inline_completion_stable_untitled_document_id";
-    const QVariant existing = doc->property(kStableUntitledDocumentIdProperty);
-    if (existing.isValid() && !existing.toString().isEmpty()) {
-        return existing.toString();
-    }
+    return stableObjectId(doc, "_kate_ai_inline_completion_stable_untitled_document_id", QStringLiteral("untitled"));
+}
 
-    const QString stableId = QStringLiteral("untitled:%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
-    doc->setProperty(kStableUntitledDocumentIdProperty, stableId);
-    return stableId;
+static QString viewStableId(KTextEditor::View *view)
+{
+    return stableObjectId(view, "_kate_ai_inline_completion_stable_view_id", QStringLiteral("view"));
 }
 
 static PromptAssemblyOptions promptAssemblyOptionsFromSettings(const CompletionSettings &settings)
@@ -140,10 +167,7 @@ static QVector<ContextItem> collectContextItemsForRequest(KTextEditor::View *vie
 
     ContextResolveRequest contextRequest;
     contextRequest.completionId = QString::number(generation);
-    contextRequest.opportunityId = QStringLiteral("view:%1:%2:%3")
-                                       .arg(static_cast<qulonglong>(reinterpret_cast<quintptr>(view)))
-                                       .arg(cursor.line())
-                                       .arg(cursor.column());
+    contextRequest.opportunityId = QStringLiteral("%1:%2:%3").arg(viewStableId(view)).arg(cursor.line()).arg(cursor.column());
     contextRequest.uri = promptCtx.filePath;
     contextRequest.languageId = promptCtx.language;
     contextRequest.version = static_cast<int>(qBound<qint64>(0, doc->revision(), static_cast<qint64>(std::numeric_limits<int>::max())));
@@ -196,14 +220,14 @@ static QString safeDocumentLine(KTextEditor::Document *doc, int line)
 static QString leftOfCursorOnLine(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
 {
     const QString line = safeDocumentLine(doc, cursor.line());
-    const int column = qBound(0, cursor.column(), line.size());
+    const int column = qBound(0, cursor.column(), boundedSize(line.size()));
     return line.left(column);
 }
 
 static QString rightOfCursorOnLine(KTextEditor::Document *doc, const KTextEditor::Cursor &cursor)
 {
     const QString line = safeDocumentLine(doc, cursor.line());
-    const int column = qBound(0, cursor.column(), line.size());
+    const int column = qBound(0, cursor.column(), boundedSize(line.size()));
     return line.mid(column);
 }
 
@@ -247,7 +271,7 @@ static void appendStrategyStopSequences(QStringList &target, const QStringList &
             continue;
         }
 
-        const int codeFenceIndex = target.indexOf(QStringLiteral("```"));
+        const int codeFenceIndex = boundedSize(target.indexOf(QStringLiteral("```")));
         if (codeFenceIndex >= 0) {
             target[codeFenceIndex] = stop;
         }
@@ -291,13 +315,13 @@ static KTextEditor::Cursor cursorAfterInsertedText(const KTextEditor::Cursor &cu
     }
 
     const QString normalized = QString(text).replace(QStringLiteral("\r\n"), QStringLiteral("\n")).replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    const int newlineCount = normalized.count(QLatin1Char('\n'));
+    const int newlineCount = boundedSize(normalized.count(QLatin1Char('\n')));
     if (newlineCount == 0) {
-        return KTextEditor::Cursor(cursor.line(), cursor.column() + normalized.size());
+        return KTextEditor::Cursor(cursor.line(), cursor.column() + boundedSize(normalized.size()));
     }
 
-    const int lastNewline = normalized.lastIndexOf(QLatin1Char('\n'));
-    return KTextEditor::Cursor(cursor.line() + newlineCount, normalized.size() - lastNewline - 1);
+    const int lastNewline = boundedSize(normalized.lastIndexOf(QLatin1Char('\n')));
+    return KTextEditor::Cursor(cursor.line() + newlineCount, boundedSize(normalized.size()) - lastNewline - 1);
 }
 
 static QString rightBounded(QString text, int maxChars)
@@ -481,8 +505,7 @@ void EditorSession::onTextInserted(KTextEditor::View *view, KTextEditor::Cursor 
         return;
     }
 
-    if (m_ignoreNextViewSignals > 0) {
-        --m_ignoreNextViewSignals;
+    if (m_suppressProgrammaticViewSignals) {
         return;
     }
 
@@ -509,8 +532,7 @@ void EditorSession::onCursorPositionChanged(KTextEditor::View *view, KTextEditor
         return;
     }
 
-    if (m_ignoreNextViewSignals > 0) {
-        --m_ignoreNextViewSignals;
+    if (m_suppressProgrammaticViewSignals) {
         return;
     }
 
@@ -593,24 +615,24 @@ void EditorSession::onDeltaReceived(quint64 requestId, const QString &delta)
         m_candidates.addCandidate(candidate);
         Q_EMIT candidateStateChanged();
         if (currentIndex <= 0 || currentId == candidate.id) {
-            (void)applyCurrentCandidate();
+            [[maybe_unused]] const bool appliedCurrentCandidate = applyCurrentCandidate();
         }
     } else if (m_candidates.currentIndex() <= 0) {
-        (void)applyProcessedSuggestion({});
+        [[maybe_unused]] const bool clearedSuggestion = applyProcessedSuggestion({});
         m_suggestionSource = SuggestionSource::None;
     }
 
     applyStateToOverlay();
 }
 
-void EditorSession::onCandidateReceived(quint64 requestId, int index, const QString &fullText)
+void EditorSession::onCandidateReceived(CompletionRequestId requestId, CompletionCandidateIndex index, const QString &fullText)
 {
-    if (requestId == m_speculativeRequestId) {
-        m_speculativeCandidateRawByIndex[index] = fullText;
+    if (requestId.value == m_speculativeRequestId) {
+        m_speculativeCandidateRawByIndex[index.value] = fullText;
         return;
     }
 
-    if (requestId != m_activeRequestId) {
+    if (requestId.value != m_activeRequestId) {
         return;
     }
 
@@ -623,10 +645,10 @@ void EditorSession::onCandidateReceived(quint64 requestId, int index, const QStr
         return;
     }
 
-    m_activeCandidateRawByIndex[index] = fullText;
+    m_activeCandidateRawByIndex[index.value] = fullText;
 
     QString textToProcess = fullText;
-    if (index == 0 && !m_acceptedFromSuggestion.isEmpty()) {
+    if (index.value == 0 && !m_acceptedFromSuggestion.isEmpty()) {
         const QString full = PromptTemplate::sanitizeCompletion(fullText);
         if (full.startsWith(m_acceptedFromSuggestion)) {
             textToProcess = full.mid(m_acceptedFromSuggestion.size());
@@ -642,15 +664,15 @@ void EditorSession::onCandidateReceived(quint64 requestId, int index, const QStr
         return;
     }
 
-    CompletionCandidate candidate = candidateFromProcessed(textToProcess, processed, QStringLiteral("network"), index);
-    candidate.id = QStringLiteral("network:%1").arg(index);
+    CompletionCandidate candidate = candidateFromProcessed(textToProcess, processed, QStringLiteral("network"), index.value);
+    candidate.id = QStringLiteral("network:%1").arg(index.value);
 
     const QString currentId = m_candidates.current().id;
     const bool applyAfterAdd = m_candidates.isEmpty() || currentId == candidate.id;
     m_candidates.addCandidate(candidate);
     Q_EMIT candidateStateChanged();
     if (applyAfterAdd) {
-        (void)applyCurrentCandidate();
+        [[maybe_unused]] const bool appliedCurrentCandidate = applyCurrentCandidate();
         applyStateToOverlay();
     }
 }
@@ -786,14 +808,14 @@ CompletionCandidate EditorSession::candidateFromProcessed(const QString &raw, co
 void EditorSession::setCandidatesForCurrentAnchor(QVector<CompletionCandidate> candidates)
 {
     m_candidates.setCandidates(std::move(candidates));
-    (void)applyCurrentCandidate();
+    [[maybe_unused]] const bool appliedCurrentCandidate = applyCurrentCandidate();
     Q_EMIT candidateStateChanged();
 }
 
 bool EditorSession::applyCurrentCandidate()
 {
     if (m_candidates.isEmpty()) {
-        (void)applyProcessedSuggestion({});
+        [[maybe_unused]] const bool clearedSuggestion = applyProcessedSuggestion({});
         return false;
     }
 
@@ -851,7 +873,10 @@ void EditorSession::filterAndShrinkCandidatesByPrefix(const QString &prefix)
             continue;
         }
 
-        CompletionCandidate shrunk = candidateFromProcessed(remainingRaw, processed, QStringLiteral("typing-as-suggested"), currentOut.size() + alternativesOut.size());
+        CompletionCandidate shrunk = candidateFromProcessed(remainingRaw,
+                                                            processed,
+                                                            QStringLiteral("typing-as-suggested"),
+                                                            boundedSize(currentOut.size() + alternativesOut.size()));
         shrunk.id = candidate.id;
         if (!currentId.isEmpty() && candidate.id == currentId) {
             currentOut.push_back(shrunk);
@@ -902,19 +927,19 @@ void EditorSession::startSpeculativeRequest()
     }
 
     const QUrl endpoint = settings.endpoint;
-    QString apiKey;
-    if (m_secretStore) {
-        apiKey = m_secretStore->readApiKey();
-    }
-
     const bool providerIsOllama = settings.provider == QString::fromLatin1(CompletionSettings::kProviderOllama);
     const bool providerIsCopilot = settings.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
     const bool apiKeyRequired = !providerIsOllama && !providerIsCopilot && !isLocalEndpoint(endpoint);
+
+    QString apiKey;
+    if (!providerIsCopilot && m_secretStore) {
+        apiKey = m_secretStore->readApiKey();
+    }
     if (apiKeyRequired && apiKey.trimmed().isEmpty()) {
         return;
     }
 
-    if (providerIsCopilot && (!m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
+    if (providerIsCopilot && (!m_copilotAuthManager || !m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
         return;
     }
 
@@ -984,11 +1009,9 @@ void EditorSession::startSpeculativeRequest()
     m_speculativeCacheKey = CompletionCache::makeKey(settings,
                                                      strategy,
                                                      promptCtx,
-                                                     prefix,
-                                                     suffix,
+                                                     {prefix, suffix},
                                                      request.n,
-                                                     assembledPromptFingerprint(request, providerIsCopilot),
-                                                     requestShapeFingerprint(request));
+                                                     {assembledPromptFingerprint(request, providerIsCopilot), requestShapeFingerprint(request)});
     if (m_completionCache->lookupExact(m_speculativeCacheKey).has_value()) {
         return;
     }
@@ -1177,21 +1200,20 @@ void EditorSession::startRequest()
 
     const QUrl endpoint = settings.endpoint;
 
-    QString apiKey;
-    if (m_secretStore) {
-        apiKey = m_secretStore->readApiKey();
-    }
-
     const bool providerIsOllama = settings.provider == QString::fromLatin1(CompletionSettings::kProviderOllama);
     const bool providerIsCopilot = settings.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
 
     const bool apiKeyRequired = !providerIsOllama && !providerIsCopilot && !isLocalEndpoint(endpoint);
+    QString apiKey;
+    if (!providerIsCopilot && m_secretStore) {
+        apiKey = m_secretStore->readApiKey();
+    }
     if (apiKeyRequired && apiKey.trimmed().isEmpty()) {
-        showError(i18n("AI completion requires an API key for endpoint: %1", endpoint.toString()));
+        showError(i18n("AI completion requires an API key for endpoint: %1", safeDisplayUrl(endpoint)));
         return;
     }
 
-    if (providerIsCopilot && (!m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
+    if (providerIsCopilot && (!m_copilotAuthManager || !m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
         showError(i18n("GitHub Copilot requires OAuth sign-in. Open the plugin settings and sign in."));
         return;
     }
@@ -1256,11 +1278,9 @@ void EditorSession::startRequest()
     const CompletionCacheKey cacheKey = CompletionCache::makeKey(settings,
                                                                  strategy,
                                                                  promptCtx,
-                                                                 prefix,
-                                                                 suffix,
+                                                                 {prefix, suffix},
                                                                  request.n,
-                                                                 assembledPromptFingerprint(request, providerIsCopilot),
-                                                                 requestShapeFingerprint(request));
+                                                                 {assembledPromptFingerprint(request, providerIsCopilot), requestShapeFingerprint(request)});
 
     if (cacheEnabled) {
         const std::optional<CompletionCacheValue> cached = m_completionCache->lookupExact(cacheKey);
@@ -1287,7 +1307,7 @@ void EditorSession::startRequest()
                 m_anchorTracker.attach(doc, cursor);
                 m_state.anchor.generation = m_generation;
                 m_state.anchorTracked = m_anchorTracker.isValid();
-                (void)syncAnchorFromTracker();
+                [[maybe_unused]] const bool anchorSynced = syncAnchorFromTracker();
 
                 m_acceptedFromSuggestion.clear();
                 m_typedPrefixFromSuggestion.clear();
@@ -1314,7 +1334,7 @@ void EditorSession::startRequest()
 
     m_state.anchor.generation = m_generation;
     m_state.anchorTracked = m_anchorTracker.isValid();
-    (void)syncAnchorFromTracker();
+    [[maybe_unused]] const bool anchorSynced = syncAnchorFromTracker();
 
     m_state.visibleText.clear();
     m_state.insertText.clear();
@@ -1416,7 +1436,7 @@ void EditorSession::selectNextCandidate()
     }
 
     if (m_candidates.next()) {
-        (void)applyCurrentCandidate();
+        [[maybe_unused]] const bool appliedCurrentCandidate = applyCurrentCandidate();
         applyStateToOverlay();
     }
 }
@@ -1434,7 +1454,7 @@ void EditorSession::selectPreviousCandidate()
     }
 
     if (m_candidates.previous()) {
-        (void)applyCurrentCandidate();
+        [[maybe_unused]] const bool appliedCurrentCandidate = applyCurrentCandidate();
         applyStateToOverlay();
     }
 }
@@ -1484,11 +1504,11 @@ void EditorSession::acceptSuggestion()
     }
 
     bumpGeneration();
-    m_ignoreNextViewSignals = 4;
+    suppressProgrammaticViewSignals();
     KTextEditor::Document::EditingTransaction transaction(doc);
     const bool ok = doc->replaceText(replaceRange, toInsert);
     if (!ok) {
-        m_ignoreNextViewSignals = 0;
+        m_suppressProgrammaticViewSignals = false;
         showError(i18n("Failed to insert AI completion into document"));
     } else {
         m_view->setCursorPosition(cursorAfterInsertedText(cursor, toInsert));
@@ -1545,11 +1565,11 @@ void EditorSession::acceptPartial(const QString &chunk)
     m_acceptedFromSuggestion += chunk;
     const QString remaining = m_state.visibleText.mid(chunk.size());
 
-    m_ignoreNextViewSignals = qMax(m_ignoreNextViewSignals, 4);
+    suppressProgrammaticViewSignals();
     KTextEditor::Document::EditingTransaction transaction(doc);
     const bool ok = m_view->insertText(chunk);
     if (!ok) {
-        m_ignoreNextViewSignals = 0;
+        m_suppressProgrammaticViewSignals = false;
         showError(i18n("Failed to insert AI completion into document"));
         bumpGeneration();
         return;
@@ -1617,7 +1637,7 @@ QString EditorSession::takeNextLineChunk(const QString &remaining) const
         return {};
     }
 
-    const int idx = remaining.indexOf(QLatin1Char('\n'));
+    const int idx = boundedSize(remaining.indexOf(QLatin1Char('\n')));
     if (idx < 0) {
         return remaining;
     }
@@ -1674,7 +1694,7 @@ GhostTextState EditorSession::clearedRenderState() const
 void EditorSession::applyStateToOverlay()
 {
     if (m_state.anchorTracked) {
-        (void)syncAnchorFromTracker();
+        [[maybe_unused]] const bool anchorSynced = syncAnchorFromTracker();
     }
 
     const GhostTextState cleared = clearedRenderState();
@@ -1734,6 +1754,14 @@ void EditorSession::showError(const QString &text)
     mw->showMessage(msg);
 }
 
+void EditorSession::suppressProgrammaticViewSignals()
+{
+    m_suppressProgrammaticViewSignals = true;
+    QTimer::singleShot(0, this, [this] {
+        m_suppressProgrammaticViewSignals = false;
+    });
+}
+
 void EditorSession::ensureProvider(const QString &providerId)
 {
     const QString normalized = providerId.trimmed().toLower();
@@ -1753,7 +1781,9 @@ void EditorSession::ensureProvider(const QString &providerId)
     }
 
     connect(m_provider.get(), &AbstractAIProvider::deltaReceived, this, &EditorSession::onDeltaReceived);
-    connect(m_provider.get(), &AbstractAIProvider::candidateFinished, this, &EditorSession::onCandidateReceived);
+    connect(m_provider.get(), &AbstractAIProvider::candidateFinished, this, [this](quint64 requestId, int index, const QString &fullText) {
+        onCandidateReceived(CompletionRequestId{requestId}, CompletionCandidateIndex{index}, fullText);
+    });
     connect(m_provider.get(), &AbstractAIProvider::requestFinished, this, &EditorSession::onRequestFinished);
     connect(m_provider.get(), &AbstractAIProvider::requestFailed, this, &EditorSession::onRequestFailed);
 }
@@ -1774,12 +1804,12 @@ QString EditorSession::extractPrefix(int maxChars) const
     const QString currentPart = (currentLine.size() > remaining) ? currentLine.right(remaining) : currentLine;
 
     prefix.prepend(currentPart);
-    remaining -= currentPart.size();
+    remaining -= boundedSize(currentPart.size());
 
     for (int line = cursor.line() - 1; line >= 0 && remaining > 0; --line) {
         const QString l = doc->line(line);
 
-        const int need = l.size() + 1;
+        const int need = boundedSize(l.size()) + 1;
         if (need <= remaining) {
             prefix.prepend(QLatin1Char('\n'));
             prefix.prepend(l);
@@ -1825,12 +1855,12 @@ QString EditorSession::extractSuffixFromCursor(const KTextEditor::Cursor &cursor
     const QString currentPart = (currentLine.size() > remaining) ? currentLine.left(remaining) : currentLine;
 
     suffix.append(currentPart);
-    remaining -= currentPart.size();
+    remaining -= boundedSize(currentPart.size());
 
     for (int line = cursor.line() + 1; line < doc->lines() && remaining > 0; ++line) {
         const QString l = doc->line(line);
 
-        const int need = l.size() + 1;
+        const int need = boundedSize(l.size()) + 1;
         if (need <= remaining) {
             suffix.append(QLatin1Char('\n'));
             suffix.append(l);

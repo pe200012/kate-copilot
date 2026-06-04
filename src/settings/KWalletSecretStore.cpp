@@ -165,12 +165,14 @@ bool KWalletSecretStore::ensureOpen() const
         return true;
     }
 
+    m_wallet.reset();
+
     if (!KWallet::Wallet::isEnabled()) {
         setError(QStringLiteral("KWallet is disabled"));
         return false;
     }
 
-    KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::NetworkWallet(), m_windowId, KWallet::Wallet::Synchronous);
+    std::unique_ptr<KWallet::Wallet> wallet(KWallet::Wallet::openWallet(KWallet::Wallet::NetworkWallet(), m_windowId, KWallet::Wallet::Synchronous));
     if (!wallet) {
         setError(QStringLiteral("KWallet openWallet returned null"));
         return false;
@@ -180,17 +182,15 @@ bool KWalletSecretStore::ensureOpen() const
     const bool folderReady = wallet->hasFolder(folder) || wallet->createFolder(folder);
     if (!folderReady) {
         setError(QStringLiteral("KWallet folder setup failed"));
-        wallet->deleteLater();
         return false;
     }
 
     if (!wallet->setFolder(folder)) {
         setError(QStringLiteral("KWallet setFolder failed"));
-        wallet->deleteLater();
         return false;
     }
 
-    m_wallet = wallet;
+    m_wallet = std::move(wallet);
     setError({});
     return true;
 }

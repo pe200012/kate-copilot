@@ -41,6 +41,7 @@ class GhostTextPushDownOverlay final : public QWidget
 
 public:
     GhostTextPushDownOverlay(KTextEditor::View *view, QWidget *editorWidget);
+    ~GhostTextPushDownOverlay() override;
 
     void setState(const GhostTextState &state);
     [[nodiscard]] GhostTextState state() const;

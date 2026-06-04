@@ -142,6 +142,15 @@ namespace
     return true;
 }
 
+void appendTruncatedBlockBestEffort(QString *out,
+                                    const QString &block,
+                                    int budget,
+                                    int minUsefulChars,
+                                    const QString &ellipsis = QStringLiteral("\n...\n"))
+{
+    [[maybe_unused]] const bool appended = appendTruncatedBlock(out, block, budget, minUsefulChars, ellipsis);
+}
+
 [[nodiscard]] QString normalizedSnippet(QString value)
 {
     value.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
@@ -285,7 +294,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
     }
 
     if (traitHeaderWritten) {
-        (void)appendTruncatedBlock(&out, QStringLiteral("\n"), options.maxContextChars, 1);
+        appendTruncatedBlockBestEffort(&out, QStringLiteral("\n"), options.maxContextChars, 1);
     }
 
     QString recentEditsBlock;
@@ -332,7 +341,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += renderDiagnosticValue(comment, item);
         block += QLatin1Char('\n');
 
-        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 180);
+        appendTruncatedBlockBestEffort(&out, block, options.maxContextChars, 180);
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {
@@ -346,7 +355,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += normalizedSnippet(item.value);
         block += QLatin1Char('\n');
 
-        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 300);
+        appendTruncatedBlockBestEffort(&out, block, options.maxContextChars, 300);
     }
 
     for (const ContextItem &item : std::as_const(candidates)) {
@@ -360,7 +369,7 @@ QString PromptAssembler::renderContextPrefix(const PromptContext &ctx, const QVe
         block += normalizedSnippet(item.value);
         block += QLatin1Char('\n');
 
-        (void)appendTruncatedBlock(&out, block, options.maxContextChars, 300);
+        appendTruncatedBlockBestEffort(&out, block, options.maxContextChars, 300);
     }
 
     return out;
@@ -391,7 +400,7 @@ QString PromptAssembler::renderCopilotContextPrefix(const PromptContext &ctx,
     const QString ellipsis = QStringLiteral("\n") + comment + QStringLiteral(" ...\n");
     for (const ContextItem &item : std::as_const(candidates)) {
         const QString block = commentizedLines(comment, copilotContextTextForItem(item));
-        (void)appendTruncatedBlock(&body, block, bodyBudget, 120, ellipsis);
+        appendTruncatedBlockBestEffort(&body, block, bodyBudget, 120, ellipsis);
     }
 
     if (body.trimmed().isEmpty()) {

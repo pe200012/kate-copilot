@@ -185,6 +185,8 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         network/CopilotCodexProvider.cpp
         network/CopilotCodexProvider.h
 
+        security/SensitiveDataRedactor.h
+
         context/ContextItem.h
         context/ContextProvider.h
         context/ContextProviderRegistry.h

@@ -44,7 +44,7 @@ namespace
 
     const QStringList parts = pathParts(path);
     for (int i = 0; i + 1 < parts.size(); ++i) {
-        const QString part = parts.at(i);
+        const QString &part = parts.at(i);
         if (exact.contains(part) || QDir::match(QStringLiteral("cmake-build-*"), part)) {
             return true;
         }
@@ -68,6 +68,21 @@ namespace
         return true;
     }
 
+    static const QStringList secretFileNames = {
+        QStringLiteral(".netrc"),
+        QStringLiteral(".npmrc"),
+        QStringLiteral(".pypirc"),
+        QStringLiteral(".terraformrc"),
+        QStringLiteral("credentials.json"),
+        QStringLiteral("service-account.json"),
+        QStringLiteral("service_account.json"),
+        QStringLiteral("terraform.tfvars"),
+    };
+    if (secretFileNames.contains(file) || file.endsWith(QStringLiteral("-service-account.json"))
+        || file.endsWith(QStringLiteral("_service_account.json"))) {
+        return true;
+    }
+
     static const QStringList secretDirectories = {
         QStringLiteral("secrets"),
         QStringLiteral("credentials"),
@@ -76,6 +91,19 @@ namespace
     const QStringList parts = pathParts(lower);
     for (int i = 0; i + 1 < parts.size(); ++i) {
         if (secretDirectories.contains(parts.at(i))) {
+            return true;
+        }
+    }
+
+    if (parts.size() >= 2) {
+        const QString &parent = parts.at(parts.size() - 2);
+        if (parent == QStringLiteral(".aws") && (file == QStringLiteral("credentials") || file == QStringLiteral("config"))) {
+            return true;
+        }
+        if (parent == QStringLiteral(".kube") && file == QStringLiteral("config")) {
+            return true;
+        }
+        if (parent == QStringLiteral(".docker") && file == QStringLiteral("config.json")) {
             return true;
         }
     }

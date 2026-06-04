@@ -19,6 +19,11 @@
 namespace KateAiInlineCompletion
 {
 
+static float averageColorComponent(qreal foreground, qreal background)
+{
+    return static_cast<float>((foreground + background) * 0.5);
+}
+
 static bool hasRenderableText(const GhostTextState &s)
 {
     return s.anchorTracked && !s.suppressed && !s.visibleText.isEmpty() && s.anchor.line >= 0 && s.anchor.column >= 0;
@@ -39,6 +44,13 @@ GhostTextOverlayWidget::GhostTextOverlayWidget(KTextEditor::View *view, QWidget 
         updateGeometryFromParent();
         raise();
         show();
+    }
+}
+
+GhostTextOverlayWidget::~GhostTextOverlayWidget()
+{
+    if (m_editorWidget) {
+        m_editorWidget->removeEventFilter(this);
     }
 }
 
@@ -116,9 +128,9 @@ void GhostTextOverlayWidget::paintEvent(QPaintEvent *event)
     const QColor fg = pal.color(QPalette::Text);
     const QColor bg = pal.color(QPalette::Base);
 
-    QColor ghost = QColor::fromRgbF((fg.redF() + bg.redF()) * 0.5,
-                                    (fg.greenF() + bg.greenF()) * 0.5,
-                                    (fg.blueF() + bg.blueF()) * 0.5);
+    QColor ghost = QColor::fromRgbF(averageColorComponent(fg.redF(), bg.redF()),
+                                    averageColorComponent(fg.greenF(), bg.greenF()),
+                                    averageColorComponent(fg.blueF(), bg.blueF()));
     ghost.setAlpha(255);
 
     const QFont textFont = effectiveTextFont();

@@ -28,7 +28,7 @@ struct RecentEditsContextOptions {
 class RecentEditsContextProvider final : public ContextProvider
 {
 public:
-    RecentEditsContextProvider(RecentEditsTracker *tracker, RecentEditsContextOptions options = {});
+    explicit RecentEditsContextProvider(RecentEditsTracker *tracker, RecentEditsContextOptions options = {});
 
     [[nodiscard]] QString id() const override;
     [[nodiscard]] int matchScore(const ContextResolveRequest &request) const override;

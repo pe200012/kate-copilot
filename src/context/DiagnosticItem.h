@@ -12,11 +12,13 @@
 #include <QDateTime>
 #include <QString>
 
+#include <cstdint>
+
 namespace KateAiInlineCompletion
 {
 
 struct DiagnosticItem {
-    enum class Severity { Error, Warning, Information, Hint };
+    enum class Severity : std::uint8_t { Error, Warning, Information, Hint };
 
     QString uri;
     Severity severity = Severity::Information;

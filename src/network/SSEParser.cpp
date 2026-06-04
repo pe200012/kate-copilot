@@ -9,12 +9,13 @@
 
 #include <QStringList>
 
-using namespace KateAiInlineCompletion;
-
-int SSEParser::findBoundary(const QByteArray &buffer, int *separatorLen)
+namespace KateAiInlineCompletion
 {
-    const int crlf = buffer.indexOf("\r\n\r\n");
-    const int lf = buffer.indexOf("\n\n");
+
+qsizetype SSEParser::findBoundary(const QByteArray &buffer, qsizetype *separatorLen)
+{
+    const qsizetype crlf = buffer.indexOf("\r\n\r\n");
+    const qsizetype lf = buffer.indexOf("\n\n");
 
     if (crlf >= 0 && (lf < 0 || crlf < lf)) {
         *separatorLen = 4;
@@ -39,8 +40,8 @@ QVector<SSEMessage> SSEParser::feed(const QByteArray &chunk)
     QVector<SSEMessage> out;
 
     while (true) {
-        int sepLen = 0;
-        const int boundary = findBoundary(m_buffer, &sepLen);
+        qsizetype sepLen = 0;
+        const qsizetype boundary = findBoundary(m_buffer, &sepLen);
         if (boundary < 0) {
             break;
         }
@@ -98,3 +99,5 @@ void SSEParser::reset()
 {
     m_buffer.clear();
 }
+
+} // namespace KateAiInlineCompletion

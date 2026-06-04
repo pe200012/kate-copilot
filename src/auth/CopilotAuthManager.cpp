@@ -8,6 +8,7 @@
 #include "auth/CopilotAuthManager.h"
 
 #include "settings/KWalletSecretStore.h"
+#include "security/SensitiveDataRedactor.h"
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -15,7 +16,6 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QRegularExpression>
 
 #include <utility>
 
@@ -43,12 +43,17 @@ struct CopilotClientHeaders {
     return h;
 }
 
+[[nodiscard]] QString sanitizedErrorDetail(QString detail)
+{
+    return redactSensitiveData(std::move(detail));
+}
+
 [[nodiscard]] QString extractErrorDetail(const QByteArray &body)
 {
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-        return QString::fromUtf8(body).trimmed();
+        return sanitizedErrorDetail(QString::fromUtf8(body));
     }
 
     const QJsonObject obj = doc.object();
@@ -56,14 +61,14 @@ struct CopilotClientHeaders {
     if (errVal.isObject()) {
         const QString msg = errVal.toObject().value(QStringLiteral("message")).toString().trimmed();
         if (!msg.isEmpty()) {
-            return msg;
+            return sanitizedErrorDetail(msg);
         }
     }
     if (errVal.isString()) {
-        return errVal.toString().trimmed();
+        return sanitizedErrorDetail(errVal.toString());
     }
 
-    return obj.value(QStringLiteral("message")).toString().trimmed();
+    return sanitizedErrorDetail(obj.value(QStringLiteral("message")).toString());
 }
 
 [[nodiscard]] QString classifyExchangeFailure(int statusCode, const QString &detail, const QString &fallback)
@@ -99,6 +104,18 @@ CopilotAuthManager::CopilotAuthManager(KWalletSecretStore *secretStore, QNetwork
     if (!m_networkManager) {
         m_networkManager = new QNetworkAccessManager(this);
     }
+}
+
+CopilotAuthManager::~CopilotAuthManager()
+{
+    if (m_exchangeReply) {
+        QObject::disconnect(m_exchangeReply, nullptr, this, nullptr);
+        m_exchangeReply->abort();
+        m_exchangeReply->deleteLater();
+        m_exchangeReply = nullptr;
+    }
+
+    m_waiters.clear();
 }
 
 bool CopilotAuthManager::hasGitHubOAuthToken() const

@@ -40,6 +40,7 @@ public:
     explicit CopilotCodexProvider(QNetworkAccessManager *manager,
                                   CopilotAuthManager *authManager,
                                   QObject *parent = nullptr);
+    ~CopilotCodexProvider() override;
 
     quint64 start(const CompletionRequest &request) override;
     void cancel(quint64 requestId) override;

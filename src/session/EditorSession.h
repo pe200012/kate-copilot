@@ -28,6 +28,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <cstdint>
 #include <memory>
 
 class QNetworkAccessManager;
@@ -99,12 +100,20 @@ private Q_SLOTS:
     void onDebounceTimeout();
 
     void onDeltaReceived(quint64 requestId, const QString &delta);
-    void onCandidateReceived(quint64 requestId, int index, const QString &fullText);
     void onRequestFinished(quint64 requestId);
     void onRequestFailed(quint64 requestId, const QString &message);
     void onDocumentTextChanged(KTextEditor::Document *document);
 
 private:
+    struct CompletionRequestId {
+        quint64 value = 0;
+    };
+    struct CompletionCandidateIndex {
+        int value = 0;
+    };
+
+    void onCandidateReceived(CompletionRequestId requestId, CompletionCandidateIndex index, const QString &fullText);
+
     void bumpGeneration();
     void scheduleCompletion();
     void startRequest();
@@ -138,6 +147,7 @@ private:
 
     void showInfo(const QString &text);
     void showError(const QString &text);
+    void suppressProgrammaticViewSignals();
 
     void ensureProvider(const QString &providerId);
 
@@ -179,7 +189,7 @@ private:
     CompletionCacheKey m_activeCacheKey;
     bool m_hasActiveCacheKey = false;
 
-    enum class SuggestionSource {
+    enum class SuggestionSource : std::uint8_t {
         None,
         Network,
         Cache,
@@ -194,7 +204,7 @@ private:
     quint64 m_generation = 0;
     quint64 m_activeRequestId = 0;
 
-    int m_ignoreNextViewSignals = 0;
+    bool m_suppressProgrammaticViewSignals = false;
     bool m_ignoreNextTextInsertedAfterTypingReuse = false;
     bool m_ignoreNextCursorMoveAfterTypingReuse = false;
     bool m_skippedCursorMoveBeforeTextInsert = false;

@@ -18,8 +18,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
-#include <QPointer>
 #include <QPushButton>
+#include <QPointer>
 #include <QScopedPointer>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -44,7 +44,7 @@ public:
     {
         connect(&m_server, &QTcpServer::newConnection, this, [this] {
             while (QTcpSocket *socket = m_server.nextPendingConnection()) {
-                m_sockets.append(socket);
+                socket->setParent(this);
                 connect(socket, &QTcpSocket::readyRead, this, [this, socket] {
                     m_requestBuffer[socket] += socket->readAll();
                     const int headerEnd = m_requestBuffer[socket].indexOf("\r\n\r\n");
@@ -75,22 +75,27 @@ public:
 
                     int delayMs = m_initialFrameDelayMs;
                     for (const QByteArray &frame : std::as_const(m_frames)) {
-                        QTimer::singleShot(delayMs, socket, [socket, frame] {
-                            if (!socket->isOpen()) {
+                        const QPointer<QTcpSocket> guardedSocket(socket);
+                        QTimer::singleShot(delayMs, this, [guardedSocket, frame] {
+                            if (!guardedSocket || !guardedSocket->isOpen()) {
                                 return;
                             }
-                            socket->write(frame);
-                            socket->flush();
+                            guardedSocket->write(frame);
+                            guardedSocket->flush();
                         });
                         delayMs += 20;
                     }
-                    QTimer::singleShot(delayMs + 20, socket, [socket] {
-                        if (socket->isOpen()) {
-                            socket->disconnectFromHost();
+                    const QPointer<QTcpSocket> guardedSocket(socket);
+                    QTimer::singleShot(delayMs + 20, this, [guardedSocket] {
+                        if (guardedSocket && guardedSocket->isOpen()) {
+                            guardedSocket->disconnectFromHost();
                         }
                     });
                 });
-                connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                connect(socket, &QTcpSocket::disconnected, this, [this, socket] {
+                    m_requestBuffer.remove(socket);
+                    socket->deleteLater();
+                });
             }
         });
     }
@@ -135,7 +140,6 @@ public:
 
 private:
     QTcpServer m_server;
-    QList<QPointer<QTcpSocket>> m_sockets;
     QHash<QTcpSocket *, QByteArray> m_requestBuffer;
     QByteArray m_lastRequestBody;
     QList<QByteArray> m_frames;

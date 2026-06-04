@@ -7,6 +7,8 @@
 
 #include "network/OpenAICompatibleProvider.h"
 
+#include "security/SensitiveDataRedactor.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +17,7 @@
 #include <QNetworkRequest>
 
 #include <algorithm>
+#include <utility>
 
 namespace KateAiInlineCompletion
 {
@@ -37,9 +40,14 @@ namespace
         return current;
     }
 
-    const int remaining = maxChars - current.size();
+    const int remaining = maxChars - static_cast<int>(qMin<qsizetype>(current.size(), maxChars));
     current += delta.left(remaining);
     return current;
+}
+
+[[nodiscard]] QString sanitizedErrorDetail(QString detail)
+{
+    return redactSensitiveData(std::move(detail));
 }
 }
 
@@ -50,6 +58,21 @@ OpenAICompatibleProvider::OpenAICompatibleProvider(QNetworkAccessManager *manage
     if (!m_manager) {
         m_manager = new QNetworkAccessManager(this);
     }
+}
+
+OpenAICompatibleProvider::~OpenAICompatibleProvider()
+{
+    for (auto it = m_requests.begin(); it != m_requests.end(); ++it) {
+        if (!it->reply) {
+            continue;
+        }
+
+        QObject::disconnect(it->reply, nullptr, this, nullptr);
+        it->reply->abort();
+        it->reply->deleteLater();
+        it->reply = nullptr;
+    }
+    m_requests.clear();
 }
 
 quint64 OpenAICompatibleProvider::start(const CompletionRequest &request)
@@ -145,7 +168,7 @@ quint64 OpenAICompatibleProvider::start(const CompletionRequest &request)
 
         if (error != QNetworkReply::NoError) {
             m_requests.remove(requestId);
-            Q_EMIT requestFailed(requestId, errorString);
+            Q_EMIT requestFailed(requestId, sanitizedErrorDetail(errorString));
             return;
         }
 
@@ -209,7 +232,7 @@ void OpenAICompatibleProvider::handleSseData(quint64 requestId, const QString &d
 
     if (obj.contains(QStringLiteral("error"))) {
         const QJsonObject err = obj.value(QStringLiteral("error")).toObject();
-        const QString message = err.value(QStringLiteral("message")).toString(QStringLiteral("AI provider error"));
+        const QString message = sanitizedErrorDetail(err.value(QStringLiteral("message")).toString(QStringLiteral("AI provider error")));
 
         it->finishedNotified = true;
         Q_EMIT requestFailed(requestId, message);
@@ -224,7 +247,7 @@ void OpenAICompatibleProvider::handleSseData(quint64 requestId, const QString &d
         return;
     }
 
-    for (const QJsonValue &choiceValue : choices) {
+    for (const auto &choiceValue : choices) {
         const QJsonObject choice = choiceValue.toObject();
         const int index = choice.value(QStringLiteral("index")).toInt(0);
         if (index < 0 || index >= it->expectedCandidateCount) {

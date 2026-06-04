@@ -12,11 +12,13 @@
 #include <QString>
 #include <QStringList>
 
+#include <cstdint>
+
 namespace KateAiInlineCompletion
 {
 
 struct CompletionStrategy {
-    enum class Mode {
+    enum class Mode : std::uint8_t {
         SingleLine,
         ParseBlock,
         MoreMultiline,

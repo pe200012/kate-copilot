@@ -9,6 +9,7 @@
 
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "settings/KWalletSecretStore.h"
+#include "security/SensitiveDataRedactor.h"
 
 #include <KLocalizedString>
 
@@ -97,7 +98,7 @@ namespace
 
 [[nodiscard]] QString copilotVerifyFailureText(int statusCode, const QString &detail)
 {
-    const QString cleanDetail = detail.trimmed();
+    const QString cleanDetail = KateAiInlineCompletion::redactSensitiveData(detail);
 
     if (statusCode == 401) {
         return cleanDetail.isEmpty() ? i18n("Copilot verification failed: GitHub OAuth sign-in expired")
@@ -684,9 +685,7 @@ void KateAiConfigPage::slotProviderChanged()
     const QString prevEndpoint = m_endpoint->text().trimmed();
     const QString oldDefaultEndpoint = providerDefaultEndpoint(m_prevProviderInUi);
 
-    if (isCopilotProvider(provider)) {
-        m_endpoint->setText(providerDefaultEndpoint(provider));
-    } else if (!prevEndpoint.isEmpty() && prevEndpoint == oldDefaultEndpoint) {
+    if (isCopilotProvider(provider) || (!prevEndpoint.isEmpty() && prevEndpoint == oldDefaultEndpoint)) {
         m_endpoint->setText(providerDefaultEndpoint(provider));
     }
 
@@ -1277,7 +1276,6 @@ void KateAiConfigPage::pollCopilotDeviceFlow()
             const bool ok = m_secretStore->writeGitHubOAuthToken(accessToken);
             if (ok) {
                 stopCopilotDeviceFlow(i18n("Signed in"));
-                refreshCopilotStatus();
                 updateCredentialsUi();
                 setChanged(true);
                 return;
@@ -1309,7 +1307,7 @@ void KateAiConfigPage::pollCopilotDeviceFlow()
     });
 }
 
-void KateAiConfigPage::stopCopilotDeviceFlow(QString infoMessage)
+void KateAiConfigPage::stopCopilotDeviceFlow(const QString &infoMessage)
 {
     if (m_copilotPollTimer.isActive()) {
         m_copilotPollTimer.stop();
@@ -1321,6 +1319,7 @@ void KateAiConfigPage::stopCopilotDeviceFlow(QString infoMessage)
 
     if (!infoMessage.trimmed().isEmpty()) {
         m_copilotStatus->setText(infoMessage);
+        return;
     }
 
     refreshCopilotStatus();

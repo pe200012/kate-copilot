@@ -8,7 +8,7 @@
 
     Example:
       ./kateaiinlinecompletion_ollama_smoke_test \
-        --endpoint http://192.168.62.31:11434/v1/chat/completions \
+        --endpoint http://127.0.0.1:11434/v1/chat/completions \
         --model codestral:latest \
         --prompt "Write a single-line Python program that prints hello."
 */
@@ -21,10 +21,22 @@
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QTextStream>
+#include <QtGlobal>
 #include <QTimer>
 
 using KateAiInlineCompletion::CompletionRequest;
 using KateAiInlineCompletion::OpenAICompatibleProvider;
+
+namespace
+{
+QString safeDisplayUrl(QUrl url)
+{
+    url.setUserInfo({});
+    url.setQuery({});
+    url.setFragment({});
+    return url.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment);
+}
+}
 
 static QTextStream qout(stdout);
 static QTextStream qerr(stderr);
@@ -42,7 +54,7 @@ int main(int argc, char **argv)
         QStringList{QStringLiteral("e"), QStringLiteral("endpoint")},
         QStringLiteral("OpenAI-compatible chat completions endpoint"),
         QStringLiteral("url"),
-        QStringLiteral("http://192.168.62.31:11434/v1/chat/completions"));
+        QStringLiteral("http://127.0.0.1:11434/v1/chat/completions"));
 
     const QCommandLineOption modelOpt(QStringList{QStringLiteral("m"), QStringLiteral("model")},
                                      QStringLiteral("Model id"),
@@ -60,9 +72,8 @@ int main(int argc, char **argv)
                                       QString());
 
     const QCommandLineOption apiKeyOpt(QStringList{QStringLiteral("k"), QStringLiteral("api-key")},
-                                      QStringLiteral("API key (Ollama accepts any value)"),
-                                      QStringLiteral("key"),
-                                      QStringLiteral("ollama"));
+                                      QStringLiteral("API key. Prefer KATE_AI_API_KEY or OPENAI_API_KEY for real secrets; Ollama accepts any value."),
+                                      QStringLiteral("key"));
 
     const QCommandLineOption maxTokensOpt(QStringList{QStringLiteral("t"), QStringLiteral("max-tokens")},
                                          QStringLiteral("max_tokens"),
@@ -117,9 +128,20 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    QString apiKey = parser.value(apiKeyOpt);
+    if (apiKey.isEmpty()) {
+        apiKey = qEnvironmentVariable("KATE_AI_API_KEY");
+    }
+    if (apiKey.isEmpty()) {
+        apiKey = qEnvironmentVariable("OPENAI_API_KEY");
+    }
+    if (apiKey.isEmpty()) {
+        apiKey = QStringLiteral("ollama");
+    }
+
     CompletionRequest req;
     req.endpoint = endpoint;
-    req.apiKey = parser.value(apiKeyOpt);
+    req.apiKey = apiKey;
     req.model = parser.value(modelOpt);
     req.systemPrompt = parser.value(systemOpt);
     req.userPrompt = parser.value(promptOpt);
@@ -138,7 +160,7 @@ int main(int argc, char **argv)
 
     QEventLoop loop;
 
-    QObject::connect(&provider, &OpenAICompatibleProvider::deltaReceived, &app, [&](quint64 id, QString delta) {
+    QObject::connect(&provider, &OpenAICompatibleProvider::deltaReceived, &app, [&](quint64 id, const QString &delta) {
         if (id != requestId) {
             return;
         }
@@ -189,7 +211,7 @@ int main(int argc, char **argv)
     }
 
     qout << "---\n";
-    qout << "endpoint: " << endpoint.toString() << "\n";
+    qout << "endpoint: " << safeDisplayUrl(endpoint) << "\n";
     qout << "model: " << req.model << "\n";
     qout << "chars: " << out.size() << "\n";
 

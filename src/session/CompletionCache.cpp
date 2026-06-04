@@ -17,12 +17,18 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace KateAiInlineCompletion
 {
 namespace
 {
+[[nodiscard]] int boundedSize(qsizetype value)
+{
+    return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
+}
+
 [[nodiscard]] QString sha256Hex(const QString &text)
 {
     return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
@@ -208,17 +214,15 @@ void CompletionCache::clear()
 int CompletionCache::size()
 {
     pruneExpired();
-    return m_entries.size();
+    return boundedSize(m_entries.size());
 }
 
 CompletionCacheKey CompletionCache::makeKey(const CompletionSettings &settings,
                                             const CompletionStrategy &strategy,
                                             const PromptContext &promptCtx,
-                                            const QString &prefix,
-                                            const QString &suffix,
+                                            const CompletionCacheDocumentText &documentText,
                                             int requestedCandidateCount,
-                                            const QString &assembledPromptFingerprint,
-                                            const QString &requestShapeFingerprint)
+                                            const CompletionCacheRequestFingerprints &fingerprints)
 {
     const CompletionSettings validated = settings.validated();
 
@@ -228,12 +232,12 @@ CompletionCacheKey CompletionCache::makeKey(const CompletionSettings &settings,
     key.promptTemplate = validated.promptTemplate;
     key.languageId = promptCtx.language;
     key.filePath = promptCtx.filePath;
-    key.endpointHash = sha256Hex(validated.endpoint.toString(QUrl::RemoveUserInfo));
+    key.endpointHash = sha256Hex(validated.endpoint.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment));
     key.copilotNwoHash = validated.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex) ? sha256Hex(validated.copilotNwo) : QString();
-    key.prefixTailHash = sha256Hex(prefixTailForHash(prefix, validated.completionCachePrefixTailChars));
-    key.suffixHeadHash = sha256Hex(suffixHeadForHash(suffix, validated.completionCacheSuffixHeadChars));
-    key.assembledPromptHash = sha256Hex(assembledPromptFingerprint);
-    key.requestShapeHash = sha256Hex(requestShapeFingerprint);
+    key.prefixTailHash = sha256Hex(prefixTailForHash(documentText.prefix, validated.completionCachePrefixTailChars));
+    key.suffixHeadHash = sha256Hex(suffixHeadForHash(documentText.suffix, validated.completionCacheSuffixHeadChars));
+    key.assembledPromptHash = sha256Hex(fingerprints.assembledPrompt);
+    key.requestShapeHash = sha256Hex(fingerprints.requestShape);
     key.requestedCandidateCount = qMax(1, requestedCandidateCount);
     key.requestMultiline = strategy.requestMultiline;
     key.strategyMode = completionStrategyModeName(strategy.mode);

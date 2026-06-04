@@ -87,7 +87,7 @@ private:
 
     void startCopilotDeviceFlow();
     void pollCopilotDeviceFlow();
-    void stopCopilotDeviceFlow(QString infoMessage);
+    void stopCopilotDeviceFlow(const QString &infoMessage);
 
     KateAiInlineCompletionPlugin *m_plugin = nullptr;
     QScopedPointer<KateAiInlineCompletion::KWalletSecretStore> m_secretStore;

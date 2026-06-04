@@ -29,6 +29,7 @@ class OpenAICompatibleProvider final : public AbstractAIProvider
 
 public:
     explicit OpenAICompatibleProvider(QNetworkAccessManager *manager, QObject *parent = nullptr);
+    ~OpenAICompatibleProvider() override;
 
     quint64 start(const CompletionRequest &request) override;
     void cancel(quint64 requestId) override;

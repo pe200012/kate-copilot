@@ -30,6 +30,7 @@
 #include <QNetworkAccessManager>
 #include <QStringList>
 #include <QUrl>
+#include <QtAlgorithms>
 
 namespace
 {
@@ -128,6 +129,7 @@ KateAiInlineCompletionPluginView::KateAiInlineCompletionPluginView(KateAiInlineC
         applyRecentEditsSettings();
         applyCompletionCacheSettings();
         trackKnownDocuments();
+        updateActionState();
     });
 
     trackKnownDocuments();
@@ -142,15 +144,11 @@ KateAiInlineCompletionPluginView::~KateAiInlineCompletionPluginView()
 {
     const auto sessions = m_sessions.values();
     m_sessions.clear();
-    for (KateAiInlineCompletion::EditorSession *session : sessions) {
-        delete session;
-    }
+    qDeleteAll(sessions);
 
     const auto inlineEditSessions = m_inlineEditSessions.values();
     m_inlineEditSessions.clear();
-    for (KateAiInlineCompletion::InlineEditSession *session : inlineEditSessions) {
-        delete session;
-    }
+    qDeleteAll(inlineEditSessions);
 
     if (m_mainWindow) {
         if (KXMLGUIFactory *factory = m_mainWindow->guiFactory()) {

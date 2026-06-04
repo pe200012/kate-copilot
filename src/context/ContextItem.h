@@ -13,11 +13,13 @@
 
 #include <QString>
 
+#include <cstdint>
+
 namespace KateAiInlineCompletion
 {
 
 struct ContextItem {
-    enum class Kind { Trait, CodeSnippet, DiagnosticBag };
+    enum class Kind : std::uint8_t { Trait, CodeSnippet, DiagnosticBag };
 
     Kind kind = Kind::Trait;
     QString providerId;

@@ -31,7 +31,7 @@ struct DiagnosticsContextOptions {
 class DiagnosticsContextProvider final : public ContextProvider
 {
 public:
-    DiagnosticsContextProvider(DiagnosticStore *store, DiagnosticsContextOptions options = {});
+    explicit DiagnosticsContextProvider(DiagnosticStore *store, DiagnosticsContextOptions options = {});
 
     [[nodiscard]] QString id() const override;
     [[nodiscard]] int matchScore(const ContextResolveRequest &request) const override;

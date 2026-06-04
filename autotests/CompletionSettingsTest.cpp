@@ -6,6 +6,7 @@
 */
 
 #include "settings/CompletionSettings.h"
+#include "security/SensitiveDataRedactor.h"
 
 #include <KConfig>
 #include <KConfigGroup>
@@ -23,6 +24,8 @@ private Q_SLOTS:
     void defaultsAreValid();
     void validationClampsBounds();
     void copilotForcesEndpoint();
+    void validationStripsSensitiveEndpointParts();
+    void sensitiveDataRedactorHandlesJsonAndAssignments();
     void roundTripConfig();
 };
 
@@ -208,6 +211,36 @@ void CompletionSettingsTest::copilotForcesEndpoint()
     QCOMPARE(v.endpoint, QUrl(QStringLiteral("https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions")));
 }
 
+void CompletionSettingsTest::validationStripsSensitiveEndpointParts()
+{
+    CompletionSettings s = CompletionSettings::defaults();
+    s.provider = QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible);
+    s.endpoint = QUrl(QStringLiteral("https://user:pass@example.com/v1/chat/completions?api-version=2026-06-04#frag"));
+
+    const CompletionSettings v = s.validated();
+
+    QCOMPARE(v.endpoint, QUrl(QStringLiteral("https://example.com/v1/chat/completions?api-version=2026-06-04")));
+    QVERIFY(v.endpoint.userInfo().isEmpty());
+    QCOMPARE(v.endpoint.query(), QStringLiteral("api-version=2026-06-04"));
+    QVERIFY(v.endpoint.fragment().isEmpty());
+}
+
+void CompletionSettingsTest::sensitiveDataRedactorHandlesJsonAndAssignments()
+{
+    const QString input = QStringLiteral(R"({"access_token":"SECRET","api_key":"KEY","authorization":"Bearer TOKEN","count":1} token=plain password: "quoted" message Bearer OTHER)");
+    const QString redacted = KateAiInlineCompletion::redactSensitiveData(input);
+
+    QVERIFY(!redacted.contains(QStringLiteral("SECRET")));
+    QVERIFY(!redacted.contains(QStringLiteral("KEY")));
+    QVERIFY(!redacted.contains(QStringLiteral("TOKEN")));
+    QVERIFY(!redacted.contains(QStringLiteral("OTHER")));
+    QVERIFY(!redacted.contains(QStringLiteral("plain")));
+    QVERIFY(!redacted.contains(QStringLiteral("quoted")));
+    QVERIFY(redacted.contains(QStringLiteral("\"access_token\":\"<redacted>\"")));
+    QVERIFY(redacted.contains(QStringLiteral("\"api_key\":\"<redacted>\"")));
+    QVERIFY(redacted.contains(QStringLiteral("Bearer <redacted>")));
+}
+
 void CompletionSettingsTest::roundTripConfig()
 {
     QTemporaryDir dir;
@@ -223,7 +256,7 @@ void CompletionSettingsTest::roundTripConfig()
     in.maxPrefixChars = CompletionSettings::kPrefixMaxChars;
     in.maxSuffixChars = CompletionSettings::kSuffixMinChars;
     in.provider = QString::fromLatin1(CompletionSettings::kProviderOllama);
-    in.endpoint = QUrl(QStringLiteral("http://localhost:11434/v1/chat/completions"));
+    in.endpoint = QUrl(QStringLiteral("http://localhost:11434/v1/chat/completions?api-version=2026-06-04"));
     in.model = QStringLiteral("qwen2.5");
     in.promptTemplate = QString::fromLatin1(CompletionSettings::kPromptTemplateFimV1);
     in.enableContextualPrompt = false;

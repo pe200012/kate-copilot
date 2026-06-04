@@ -13,12 +13,14 @@
 
 #include <KTextEditor/Document>
 
-#include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QStringList>
 #include <QTimer>
 #include <QVector>
+
+#include <memory>
+#include <unordered_map>
 
 namespace KateAiInlineCompletion
 {
@@ -58,7 +60,7 @@ private:
         QPointer<KTextEditor::Document> document;
         QString uriOverride;
         QStringList snapshot;
-        QTimer *timer = nullptr;
+        QTimer timer;
         bool pending = false;
         QMetaObject::Connection textChangedConnection;
         QMetaObject::Connection destroyedConnection;
@@ -75,7 +77,7 @@ private:
     [[nodiscard]] bool shouldMerge(const RecentEdit &existing, const RecentEdit &incoming) const;
 
     RecentEditsTrackerOptions m_options;
-    QHash<KTextEditor::Document *, DocumentState *> m_documents;
+    std::unordered_map<KTextEditor::Document *, std::unique_ptr<DocumentState>> m_documents;
     QVector<RecentEdit> m_edits;
 };
 

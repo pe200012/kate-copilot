@@ -44,6 +44,7 @@ private Q_SLOTS:
     void rejectsEmptyNewTextWhenDeletionDisabled();
     void rejectsNoOpReplacement();
     void rejectsNewTextAboveMax();
+    void rejectsMissingOrNonStringNewTextWhenDeletionEnabled();
     void rejectsMultipleEdits();
     void rejectsRangeDifferentFromExpectedRange();
     void normalizesCrLf();
@@ -128,6 +129,19 @@ void InlineEditParserTest::rejectsNewTextAboveMax()
     options.maxNewTextChars = 4;
     const QString response = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"omega"}]})");
     QVERIFY(!InlineEditParser::parse(response, doc.get(), options).valid);
+}
+
+void InlineEditParserTest::rejectsMissingOrNonStringNewTextWhenDeletionEnabled()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\n"));
+    InlineEditParserOptions options;
+    options.allowDeletion = true;
+
+    const QString missing = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6}]})");
+    const QString nonString = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":123}]})");
+
+    QVERIFY(!InlineEditParser::parse(missing, doc.get(), options).valid);
+    QVERIFY(!InlineEditParser::parse(nonString, doc.get(), options).valid);
 }
 
 void InlineEditParserTest::rejectsMultipleEdits()
