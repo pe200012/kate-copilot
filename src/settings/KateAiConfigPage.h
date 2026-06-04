@@ -80,6 +80,7 @@ private:
     void updateStrategyControlsUi();
     void updateCacheControlsUi();
     void updateCandidateControlsUi();
+    void updateInlineEditControlsUi();
     void refreshProviderHint();
     void refreshApiKeyStatus();
     void refreshCopilotStatus();
@@ -136,6 +137,15 @@ private:
     QCheckBox *m_enableSpeculativeRequests = nullptr;
     QSpinBox *m_speculativeRequestDelayMs = nullptr;
     QSpinBox *m_speculativeRequestMaxTokens = nullptr;
+
+    // Inline edits
+    QGroupBox *m_inlineEditBox = nullptr;
+    QCheckBox *m_enableInlineEdits = nullptr;
+    QSpinBox *m_inlineEditMaxNewTextChars = nullptr;
+    QSpinBox *m_inlineEditMaxPrefixChars = nullptr;
+    QSpinBox *m_inlineEditMaxSuffixChars = nullptr;
+    QCheckBox *m_inlineEditUseContext = nullptr;
+    QCheckBox *m_inlineEditCopilotExperimental = nullptr;
 
     // Context
     QGroupBox *m_contextBox = nullptr;

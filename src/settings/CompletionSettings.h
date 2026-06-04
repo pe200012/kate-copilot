@@ -82,6 +82,10 @@ struct CompletionSettings {
     static constexpr int kSpeculativeRequestDelayMaxMs = 5000;
     static constexpr int kSpeculativeRequestMaxTokensMin = 8;
     static constexpr int kSpeculativeRequestMaxTokensMax = 512;
+    static constexpr int kInlineEditMaxNewTextCharsMin = 100;
+    static constexpr int kInlineEditMaxNewTextCharsMax = 50000;
+    static constexpr int kInlineEditExcerptCharsMin = 0;
+    static constexpr int kInlineEditExcerptCharsMax = 20000;
 
     // Provider identifiers
     static constexpr const char *kProviderOpenAICompatible = "openai-compatible";
@@ -153,6 +157,13 @@ struct CompletionSettings {
     bool enableSpeculativeRequests = false;
     int speculativeRequestDelayMs = 150;
     int speculativeRequestMaxTokens = 64;
+
+    bool enableInlineEdits = true;
+    int inlineEditMaxNewTextChars = 8000;
+    int inlineEditMaxPrefixChars = 6000;
+    int inlineEditMaxSuffixChars = 3000;
+    bool inlineEditUseContext = true;
+    bool inlineEditCopilotExperimental = false;
 
     // GitHub Copilot (OAuth) provider options
     QString copilotClientId = QStringLiteral("Iv1.b507a08c87ecfe98");

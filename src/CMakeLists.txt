@@ -162,10 +162,20 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         session/SuggestionPostProcessor.cpp
         session/SuggestionPostProcessor.h
 
+        inlineedit/InlineEdit.h
+        inlineedit/InlineEditParser.cpp
+        inlineedit/InlineEditParser.h
+        inlineedit/InlineEditPromptBuilder.cpp
+        inlineedit/InlineEditPromptBuilder.h
+        inlineedit/InlineEditSession.cpp
+        inlineedit/InlineEditSession.h
+
         render/GhostTextInlineNoteProvider.cpp
         render/GhostTextInlineNoteProvider.h
         render/GhostTextOverlayWidget.cpp
         render/GhostTextOverlayWidget.h
+        render/InlineEditPreviewOverlay.cpp
+        render/InlineEditPreviewOverlay.h
         render/GhostTextPushDownOverlay.cpp
         render/GhostTextPushDownOverlay.h
 

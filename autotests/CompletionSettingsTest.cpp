@@ -91,6 +91,13 @@ void CompletionSettingsTest::defaultsAreValid()
     QCOMPARE(d.speculativeRequestDelayMs, 150);
     QCOMPARE(d.speculativeRequestMaxTokens, 64);
 
+    QVERIFY(d.enableInlineEdits);
+    QCOMPARE(d.inlineEditMaxNewTextChars, 8000);
+    QCOMPARE(d.inlineEditMaxPrefixChars, 6000);
+    QCOMPARE(d.inlineEditMaxSuffixChars, 3000);
+    QVERIFY(d.inlineEditUseContext);
+    QVERIFY(!d.inlineEditCopilotExperimental);
+
     QVERIFY(d.endpoint.isValid());
     QVERIFY(!d.endpoint.isRelative());
     QVERIFY(!d.model.trimmed().isEmpty());
@@ -134,6 +141,9 @@ void CompletionSettingsTest::validationClampsBounds()
     s.maxStoredCandidates = 999999;
     s.speculativeRequestDelayMs = 999999;
     s.speculativeRequestMaxTokens = 1;
+    s.inlineEditMaxNewTextChars = 1;
+    s.inlineEditMaxPrefixChars = 999999;
+    s.inlineEditMaxSuffixChars = 999999;
     s.contextExcludePatterns = {QStringLiteral(" *.tmp "), QString(), QStringLiteral("build/generated/*")};
     s.provider = QStringLiteral("unknown");
     s.endpoint = QUrl(QStringLiteral("relative/path"));
@@ -175,6 +185,9 @@ void CompletionSettingsTest::validationClampsBounds()
     QCOMPARE(v.maxStoredCandidates, CompletionSettings::kMaxStoredCandidatesMax);
     QCOMPARE(v.speculativeRequestDelayMs, CompletionSettings::kSpeculativeRequestDelayMaxMs);
     QCOMPARE(v.speculativeRequestMaxTokens, CompletionSettings::kSpeculativeRequestMaxTokensMin);
+    QCOMPARE(v.inlineEditMaxNewTextChars, CompletionSettings::kInlineEditMaxNewTextCharsMin);
+    QCOMPARE(v.inlineEditMaxPrefixChars, CompletionSettings::kInlineEditExcerptCharsMax);
+    QCOMPARE(v.inlineEditMaxSuffixChars, CompletionSettings::kInlineEditExcerptCharsMax);
     QCOMPARE(v.contextExcludePatterns, QStringList({QStringLiteral("*.tmp"), QStringLiteral("build/generated/*")}));
     QCOMPARE(v.provider, QString::fromLatin1(CompletionSettings::kProviderOpenAICompatible));
     QVERIFY(v.endpoint.isValid());
@@ -257,6 +270,12 @@ void CompletionSettingsTest::roundTripConfig()
     in.enableSpeculativeRequests = true;
     in.speculativeRequestDelayMs = 400;
     in.speculativeRequestMaxTokens = 88;
+    in.enableInlineEdits = false;
+    in.inlineEditMaxNewTextChars = 12345;
+    in.inlineEditMaxPrefixChars = 2345;
+    in.inlineEditMaxSuffixChars = 1234;
+    in.inlineEditUseContext = false;
+    in.inlineEditCopilotExperimental = true;
     in.suppressWhenCompletionPopupVisible = false;
     in.copilotClientId = QStringLiteral("Iv1.testclient");
     in.copilotNwo = QStringLiteral("example/org");
@@ -317,6 +336,12 @@ void CompletionSettingsTest::roundTripConfig()
     QCOMPARE(out.enableSpeculativeRequests, in.enableSpeculativeRequests);
     QCOMPARE(out.speculativeRequestDelayMs, in.speculativeRequestDelayMs);
     QCOMPARE(out.speculativeRequestMaxTokens, in.speculativeRequestMaxTokens);
+    QCOMPARE(out.enableInlineEdits, in.enableInlineEdits);
+    QCOMPARE(out.inlineEditMaxNewTextChars, in.inlineEditMaxNewTextChars);
+    QCOMPARE(out.inlineEditMaxPrefixChars, in.inlineEditMaxPrefixChars);
+    QCOMPARE(out.inlineEditMaxSuffixChars, in.inlineEditMaxSuffixChars);
+    QCOMPARE(out.inlineEditUseContext, in.inlineEditUseContext);
+    QCOMPARE(out.inlineEditCopilotExperimental, in.inlineEditCopilotExperimental);
     QCOMPARE(out.suppressWhenCompletionPopupVisible, in.suppressWhenCompletionPopupVisible);
     QCOMPARE(out.copilotClientId, in.copilotClientId);
     QCOMPARE(out.copilotNwo, in.copilotNwo);

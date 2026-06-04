@@ -321,6 +321,41 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
                                             KateAiInlineCompletion::CompletionSettings::kSpeculativeRequestMaxTokensMax);
     candidatesForm->addRow(i18n("Speculative request max tokens"), m_speculativeRequestMaxTokens);
 
+    m_inlineEditBox = new QGroupBox(i18n("Inline Edits"), this);
+    root->addWidget(m_inlineEditBox);
+
+    auto *inlineEditForm = new QFormLayout(m_inlineEditBox);
+
+    m_enableInlineEdits = new QCheckBox(i18n("Enable inline edits"), m_inlineEditBox);
+    m_enableInlineEdits->setObjectName(QStringLiteral("inlineEditsCheckBox"));
+    inlineEditForm->addRow(m_enableInlineEdits);
+
+    m_inlineEditMaxNewTextChars = new QSpinBox(m_inlineEditBox);
+    m_inlineEditMaxNewTextChars->setObjectName(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
+    m_inlineEditMaxNewTextChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditMaxNewTextCharsMin,
+                                          KateAiInlineCompletion::CompletionSettings::kInlineEditMaxNewTextCharsMax);
+    inlineEditForm->addRow(i18n("Max replacement characters"), m_inlineEditMaxNewTextChars);
+
+    m_inlineEditMaxPrefixChars = new QSpinBox(m_inlineEditBox);
+    m_inlineEditMaxPrefixChars->setObjectName(QStringLiteral("inlineEditMaxPrefixCharsSpinBox"));
+    m_inlineEditMaxPrefixChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMin,
+                                         KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMax);
+    inlineEditForm->addRow(i18n("Max prefix excerpt characters"), m_inlineEditMaxPrefixChars);
+
+    m_inlineEditMaxSuffixChars = new QSpinBox(m_inlineEditBox);
+    m_inlineEditMaxSuffixChars->setObjectName(QStringLiteral("inlineEditMaxSuffixCharsSpinBox"));
+    m_inlineEditMaxSuffixChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMin,
+                                         KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMax);
+    inlineEditForm->addRow(i18n("Max suffix excerpt characters"), m_inlineEditMaxSuffixChars);
+
+    m_inlineEditUseContext = new QCheckBox(i18n("Use contextual prompt for inline edits"), m_inlineEditBox);
+    m_inlineEditUseContext->setObjectName(QStringLiteral("inlineEditUseContextCheckBox"));
+    inlineEditForm->addRow(m_inlineEditUseContext);
+
+    m_inlineEditCopilotExperimental = new QCheckBox(i18n("Enable experimental Copilot inline edits"), m_inlineEditBox);
+    m_inlineEditCopilotExperimental->setObjectName(QStringLiteral("inlineEditCopilotExperimentalCheckBox"));
+    inlineEditForm->addRow(m_inlineEditCopilotExperimental);
+
     m_contextBox = new QGroupBox(i18n("Context"), this);
     root->addWidget(m_contextBox);
 
@@ -526,6 +561,13 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     connect(m_speculativeRequestDelayMs, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_speculativeRequestMaxTokens, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
 
+    connect(m_enableInlineEdits, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditMaxNewTextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditMaxPrefixChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditMaxSuffixChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditUseContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditCopilotExperimental, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+
     connect(m_enableContextualPrompt, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextItems, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_maxContextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
@@ -631,6 +673,7 @@ void KateAiConfigPage::slotUiChanged()
     updateStrategyControlsUi();
     updateCacheControlsUi();
     updateCandidateControlsUi();
+    updateInlineEditControlsUi();
     setChanged(true);
 }
 
@@ -869,10 +912,18 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_speculativeRequestDelayMs->setValue(v.speculativeRequestDelayMs);
     m_speculativeRequestMaxTokens->setValue(v.speculativeRequestMaxTokens);
 
+    m_enableInlineEdits->setChecked(v.enableInlineEdits);
+    m_inlineEditMaxNewTextChars->setValue(v.inlineEditMaxNewTextChars);
+    m_inlineEditMaxPrefixChars->setValue(v.inlineEditMaxPrefixChars);
+    m_inlineEditMaxSuffixChars->setValue(v.inlineEditMaxSuffixChars);
+    m_inlineEditUseContext->setChecked(v.inlineEditUseContext);
+    m_inlineEditCopilotExperimental->setChecked(v.inlineEditCopilotExperimental);
+
     updateContextControlsUi();
     updateStrategyControlsUi();
     updateCacheControlsUi();
     updateCandidateControlsUi();
+    updateInlineEditControlsUi();
     updateCredentialsUi();
 }
 
@@ -924,6 +975,13 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.enableSpeculativeRequests = m_enableSpeculativeRequests->isChecked();
     s.speculativeRequestDelayMs = m_speculativeRequestDelayMs->value();
     s.speculativeRequestMaxTokens = m_speculativeRequestMaxTokens->value();
+
+    s.enableInlineEdits = m_enableInlineEdits->isChecked();
+    s.inlineEditMaxNewTextChars = m_inlineEditMaxNewTextChars->value();
+    s.inlineEditMaxPrefixChars = m_inlineEditMaxPrefixChars->value();
+    s.inlineEditMaxSuffixChars = m_inlineEditMaxSuffixChars->value();
+    s.inlineEditUseContext = m_inlineEditUseContext->isChecked();
+    s.inlineEditCopilotExperimental = m_inlineEditCopilotExperimental->isChecked();
 
     s.copilotClientId = m_copilotClientId->text().trimmed();
     s.copilotNwo = m_copilotNwo->text().trimmed();
@@ -1003,6 +1061,20 @@ void KateAiConfigPage::updateCandidateControlsUi()
     m_enableSpeculativeRequests->setEnabled(true);
     m_speculativeRequestDelayMs->setEnabled(speculationEnabled);
     m_speculativeRequestMaxTokens->setEnabled(speculationEnabled);
+}
+
+void KateAiConfigPage::updateInlineEditControlsUi()
+{
+    if (!m_enableInlineEdits) {
+        return;
+    }
+
+    const bool inlineEditsEnabled = m_enableInlineEdits->isChecked();
+    m_inlineEditMaxNewTextChars->setEnabled(inlineEditsEnabled);
+    m_inlineEditMaxPrefixChars->setEnabled(inlineEditsEnabled);
+    m_inlineEditMaxSuffixChars->setEnabled(inlineEditsEnabled);
+    m_inlineEditUseContext->setEnabled(inlineEditsEnabled);
+    m_inlineEditCopilotExperimental->setEnabled(inlineEditsEnabled);
 }
 
 void KateAiConfigPage::updateCredentialsUi()

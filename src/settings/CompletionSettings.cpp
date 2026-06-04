@@ -132,6 +132,11 @@ CompletionSettings CompletionSettings::validated() const
     out.speculativeRequestMaxTokens = qBound(kSpeculativeRequestMaxTokensMin,
                                              out.speculativeRequestMaxTokens,
                                              kSpeculativeRequestMaxTokensMax);
+    out.inlineEditMaxNewTextChars = qBound(kInlineEditMaxNewTextCharsMin,
+                                           out.inlineEditMaxNewTextChars,
+                                           kInlineEditMaxNewTextCharsMax);
+    out.inlineEditMaxPrefixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxPrefixChars, kInlineEditExcerptCharsMax);
+    out.inlineEditMaxSuffixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxSuffixChars, kInlineEditExcerptCharsMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
 
     out.provider = out.provider.trimmed().toLower();
@@ -224,6 +229,12 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.enableSpeculativeRequests = group.readEntry("EnableSpeculativeRequests", d.enableSpeculativeRequests);
     out.speculativeRequestDelayMs = group.readEntry("SpeculativeRequestDelayMs", d.speculativeRequestDelayMs);
     out.speculativeRequestMaxTokens = group.readEntry("SpeculativeRequestMaxTokens", d.speculativeRequestMaxTokens);
+    out.enableInlineEdits = group.readEntry("EnableInlineEdits", d.enableInlineEdits);
+    out.inlineEditMaxNewTextChars = group.readEntry("InlineEditMaxNewTextChars", d.inlineEditMaxNewTextChars);
+    out.inlineEditMaxPrefixChars = group.readEntry("InlineEditMaxPrefixChars", d.inlineEditMaxPrefixChars);
+    out.inlineEditMaxSuffixChars = group.readEntry("InlineEditMaxSuffixChars", d.inlineEditMaxSuffixChars);
+    out.inlineEditUseContext = group.readEntry("InlineEditUseContext", d.inlineEditUseContext);
+    out.inlineEditCopilotExperimental = group.readEntry("InlineEditCopilotExperimental", d.inlineEditCopilotExperimental);
 
     out.provider = group.readEntry("Provider", d.provider);
     out.endpoint = QUrl(group.readEntry("Endpoint", d.endpoint.toString()));
@@ -290,6 +301,12 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("EnableSpeculativeRequests", v.enableSpeculativeRequests);
     group.writeEntry("SpeculativeRequestDelayMs", v.speculativeRequestDelayMs);
     group.writeEntry("SpeculativeRequestMaxTokens", v.speculativeRequestMaxTokens);
+    group.writeEntry("EnableInlineEdits", v.enableInlineEdits);
+    group.writeEntry("InlineEditMaxNewTextChars", v.inlineEditMaxNewTextChars);
+    group.writeEntry("InlineEditMaxPrefixChars", v.inlineEditMaxPrefixChars);
+    group.writeEntry("InlineEditMaxSuffixChars", v.inlineEditMaxSuffixChars);
+    group.writeEntry("InlineEditUseContext", v.inlineEditUseContext);
+    group.writeEntry("InlineEditCopilotExperimental", v.inlineEditCopilotExperimental);
 
     group.writeEntry("Provider", v.provider);
     group.writeEntry("Endpoint", v.endpoint.toString());

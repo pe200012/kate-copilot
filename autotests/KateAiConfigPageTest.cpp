@@ -32,6 +32,7 @@ private Q_SLOTS:
     void strategySettingsApplyFromUi();
     void cacheSettingsApplyFromUi();
     void candidateSettingsApplyFromUi();
+    void inlineEditSettingsApplyFromUi();
     void hiddenRecentEditsSettingsSurviveApply();
 };
 
@@ -65,6 +66,8 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *candidateCycling = page.findChild<QCheckBox *>(QStringLiteral("candidateCyclingCheckBox"));
     auto *manualCandidateCount = page.findChild<QSpinBox *>(QStringLiteral("manualCandidateCountSpinBox"));
     auto *speculativeRequests = page.findChild<QCheckBox *>(QStringLiteral("speculativeRequestsCheckBox"));
+    auto *inlineEdits = page.findChild<QCheckBox *>(QStringLiteral("inlineEditsCheckBox"));
+    auto *inlineEditMaxNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -85,6 +88,8 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(candidateCycling);
     QVERIFY(manualCandidateCount);
     QVERIFY(speculativeRequests);
+    QVERIFY(inlineEdits);
+    QVERIFY(inlineEditMaxNewText);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -316,6 +321,47 @@ void KateAiConfigPageTest::candidateSettingsApplyFromUi()
     QCOMPARE(out.enableSpeculativeRequests, true);
     QCOMPARE(out.speculativeRequestDelayMs, 400);
     QCOMPARE(out.speculativeRequestMaxTokens, 88);
+}
+
+void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
+{
+    KateAiInlineCompletionPlugin plugin(nullptr, {});
+    KateAiConfigPage page(nullptr, &plugin);
+
+    auto *inlineEdits = page.findChild<QCheckBox *>(QStringLiteral("inlineEditsCheckBox"));
+    auto *maxNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
+    auto *maxPrefix = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxPrefixCharsSpinBox"));
+    auto *maxSuffix = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxSuffixCharsSpinBox"));
+    auto *useContext = page.findChild<QCheckBox *>(QStringLiteral("inlineEditUseContextCheckBox"));
+    auto *copilotExperimental = page.findChild<QCheckBox *>(QStringLiteral("inlineEditCopilotExperimentalCheckBox"));
+
+    QVERIFY(inlineEdits);
+    QVERIFY(maxNewText);
+    QVERIFY(maxPrefix);
+    QVERIFY(maxSuffix);
+    QVERIFY(useContext);
+    QVERIFY(copilotExperimental);
+
+    inlineEdits->setChecked(false);
+    maxNewText->setValue(12345);
+    maxPrefix->setValue(2345);
+    maxSuffix->setValue(1234);
+    useContext->setChecked(false);
+    copilotExperimental->setChecked(true);
+
+    QVERIFY(!maxNewText->isEnabled());
+    QVERIFY(!maxPrefix->isEnabled());
+    QVERIFY(!maxSuffix->isEnabled());
+
+    page.apply();
+
+    const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
+    QCOMPARE(out.enableInlineEdits, false);
+    QCOMPARE(out.inlineEditMaxNewTextChars, 12345);
+    QCOMPARE(out.inlineEditMaxPrefixChars, 2345);
+    QCOMPARE(out.inlineEditMaxSuffixChars, 1234);
+    QCOMPARE(out.inlineEditUseContext, false);
+    QCOMPARE(out.inlineEditCopilotExperimental, true);
 }
 
 void KateAiConfigPageTest::hiddenRecentEditsSettingsSurviveApply()

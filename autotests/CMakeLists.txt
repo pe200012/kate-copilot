@@ -93,6 +93,88 @@ target_include_directories(kateaiinlinecompletion_completion_cache_test
         ${CMAKE_SOURCE_DIR}/src
 )
 
+ecm_add_test(InlineEditParserTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_parser_test
+    LINK_LIBRARIES
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_parser_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+ecm_add_test(InlineEditPromptBuilderTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_prompt_builder_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_context
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_prompt_builder_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+ecm_add_test(InlineEditSessionTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPlugin.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin/KateAiInlineCompletionPluginView.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/KateAiConfigPage.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/EditorSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCache.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionCandidateList.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategy.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/InlineEditPreviewOverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
+    ${CMAKE_SOURCE_DIR}/src/prompt/PromptTemplate.cpp
+    ${CMAKE_SOURCE_DIR}/src/prompt/CopilotCodexPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ProjectTraitsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/OpenTabsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsTracker.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RecentEditsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/DiagnosticsAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/ContextFileFilter.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesResolver.cpp
+    ${CMAKE_SOURCE_DIR}/src/context/RelatedFilesContextProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
+    ${CMAKE_SOURCE_DIR}/src/network/OpenAICompatibleProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/CopilotCodexProvider.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/SSEParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/auth/CopilotAuthManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/CompletionSettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/KWalletSecretStore.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_session_test
+    LINK_LIBRARIES
+        Qt6::Test
+        Qt6::Widgets
+        Qt6::Network
+        KF6::TextEditor
+        KF6::Wallet
+        KF6::I18n
+        KF6::ConfigCore
+        KF6::CoreAddons
+        KF6::XmlGui
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_session_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 ecm_add_test(RecentEditsTrackerTest.cpp
     TEST_NAME kateaiinlinecompletion_recent_edits_tracker_test
     LINK_LIBRARIES
@@ -238,6 +320,9 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
@@ -254,6 +339,7 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/InlineEditPreviewOverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
     ${CMAKE_SOURCE_DIR}/src/network/OpenAICompatibleProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/network/CopilotCodexProvider.cpp
@@ -291,6 +377,9 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
@@ -307,6 +396,7 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/prompt/PromptAssembler.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/render/InlineEditPreviewOverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/network/AbstractAIProvider.h
     ${CMAKE_SOURCE_DIR}/src/network/OpenAICompatibleProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/network/CopilotCodexProvider.cpp

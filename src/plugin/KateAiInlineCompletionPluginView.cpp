@@ -13,6 +13,7 @@
 #include "context/DiagnosticsAdapter.h"
 #include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
+#include "inlineedit/InlineEditSession.h"
 #include "session/CompletionCache.h"
 #include "session/EditorSession.h"
 #include "settings/KWalletSecretStore.h"
@@ -145,6 +146,12 @@ KateAiInlineCompletionPluginView::~KateAiInlineCompletionPluginView()
         delete session;
     }
 
+    const auto inlineEditSessions = m_inlineEditSessions.values();
+    m_inlineEditSessions.clear();
+    for (KateAiInlineCompletion::InlineEditSession *session : inlineEditSessions) {
+        delete session;
+    }
+
     if (m_mainWindow) {
         if (KXMLGUIFactory *factory = m_mainWindow->guiFactory()) {
             factory->removeClient(this);
@@ -255,6 +262,10 @@ void KateAiInlineCompletionPluginView::setupActions()
     m_dismissAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_completion_dismiss"));
     m_dismissAction->setText(i18n("Dismiss AI Inline Suggestion"));
     connect(m_dismissAction, &QAction::triggered, this, [this] {
+        if (auto *inlineEdit = activeInlineEditSession(); inlineEdit && (inlineEdit->hasPreview() || inlineEdit->hasActiveRequest())) {
+            inlineEdit->dismissInlineEdit();
+            return;
+        }
         if (auto *session = activeSession()) {
             session->dismissSuggestion();
         }
@@ -287,6 +298,32 @@ void KateAiInlineCompletionPluginView::setupActions()
         }
     });
 
+    m_inlineEditTriggerAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_edit_trigger"));
+    m_inlineEditTriggerAction->setText(i18n("Trigger AI Inline Edit"));
+    actionCollection()->setDefaultShortcut(m_inlineEditTriggerAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_E));
+    connect(m_inlineEditTriggerAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeInlineEditSession()) {
+            session->triggerInlineEdit();
+        }
+    });
+
+    m_inlineEditAcceptAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_edit_accept"));
+    m_inlineEditAcceptAction->setText(i18n("Accept AI Inline Edit"));
+    actionCollection()->setDefaultShortcut(m_inlineEditAcceptAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Return));
+    connect(m_inlineEditAcceptAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeInlineEditSession()) {
+            session->acceptInlineEdit();
+        }
+    });
+
+    m_inlineEditDismissAction = actionCollection()->addAction(QStringLiteral("kate_ai_inline_edit_dismiss"));
+    m_inlineEditDismissAction->setText(i18n("Dismiss AI Inline Edit"));
+    connect(m_inlineEditDismissAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeInlineEditSession()) {
+            session->dismissInlineEdit();
+        }
+    });
+
     updateActionState();
 }
 
@@ -315,6 +352,16 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
                                                              view);
     m_sessions.insert(view, session);
 
+    auto *inlineEditSession = new KateAiInlineCompletion::InlineEditSession(view,
+                                                                            m_plugin,
+                                                                            m_secretStore,
+                                                                            m_networkManager,
+                                                                            m_copilotAuthManager,
+                                                                            m_recentEditsTracker,
+                                                                            m_diagnosticStore,
+                                                                            view);
+    m_inlineEditSessions.insert(view, inlineEditSession);
+
     connect(session, &KateAiInlineCompletion::EditorSession::suggestionVisibilityChanged, this, [this] {
         updateActionState();
     });
@@ -323,8 +370,17 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
         updateActionState();
     });
 
+    connect(inlineEditSession, &KateAiInlineCompletion::InlineEditSession::previewStateChanged, this, [this] {
+        updateActionState();
+    });
+
+    connect(inlineEditSession, &KateAiInlineCompletion::InlineEditSession::requestStateChanged, this, [this] {
+        updateActionState();
+    });
+
     connect(view, &QObject::destroyed, this, [this, view] {
         m_sessions.remove(view);
+        m_inlineEditSessions.remove(view);
         updateActionState();
     });
 }
@@ -343,12 +399,30 @@ KateAiInlineCompletion::EditorSession *KateAiInlineCompletionPluginView::activeS
     return m_sessions.value(view, nullptr);
 }
 
+KateAiInlineCompletion::InlineEditSession *KateAiInlineCompletionPluginView::activeInlineEditSession() const
+{
+    if (!m_mainWindow) {
+        return nullptr;
+    }
+
+    KTextEditor::View *view = m_mainWindow->activeView();
+    if (!view) {
+        return nullptr;
+    }
+
+    return m_inlineEditSessions.value(view, nullptr);
+}
+
 void KateAiInlineCompletionPluginView::updateActionState()
 {
     auto *session = activeSession();
+    auto *inlineEditSession = activeInlineEditSession();
     const bool hasSession = session != nullptr;
     const bool hasSuggestion = hasSession && session->hasVisibleSuggestion();
     const bool canCycle = hasSuggestion && session->hasMultipleCandidates() && m_plugin && m_plugin->settings().validated().enableCandidateCycling;
+    const bool hasInlineEditSession = inlineEditSession != nullptr;
+    const bool hasInlineEditPreview = hasInlineEditSession && inlineEditSession->hasPreview();
+    const bool inlineEditRunning = hasInlineEditSession && inlineEditSession->hasActiveRequest();
 
     if (m_acceptFullAction) {
         m_acceptFullAction->setEnabled(hasSuggestion);
@@ -360,7 +434,7 @@ void KateAiInlineCompletionPluginView::updateActionState()
         m_acceptNextLineAction->setEnabled(hasSuggestion);
     }
     if (m_dismissAction) {
-        m_dismissAction->setEnabled(hasSuggestion);
+        m_dismissAction->setEnabled(hasSuggestion || hasInlineEditPreview || inlineEditRunning);
     }
     if (m_triggerAction) {
         m_triggerAction->setEnabled(hasSession);
@@ -370,5 +444,14 @@ void KateAiInlineCompletionPluginView::updateActionState()
     }
     if (m_previousCandidateAction) {
         m_previousCandidateAction->setEnabled(canCycle);
+    }
+    if (m_inlineEditTriggerAction) {
+        m_inlineEditTriggerAction->setEnabled(hasInlineEditSession && m_plugin && m_plugin->settings().validated().enableInlineEdits);
+    }
+    if (m_inlineEditAcceptAction) {
+        m_inlineEditAcceptAction->setEnabled(hasInlineEditPreview);
+    }
+    if (m_inlineEditDismissAction) {
+        m_inlineEditDismissAction->setEnabled(hasInlineEditPreview || inlineEditRunning);
     }
 }

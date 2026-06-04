@@ -31,6 +31,7 @@ class CompletionCache;
 class DiagnosticsAdapter;
 class DiagnosticStore;
 class EditorSession;
+class InlineEditSession;
 class KWalletSecretStore;
 class RecentEditsTracker;
 }
@@ -58,6 +59,7 @@ private:
     void trackKnownDocuments();
     void ensureSession(KTextEditor::View *view);
     [[nodiscard]] KateAiInlineCompletion::EditorSession *activeSession() const;
+    [[nodiscard]] KateAiInlineCompletion::InlineEditSession *activeInlineEditSession() const;
     void updateActionState();
 
     KateAiInlineCompletionPlugin *m_plugin = nullptr;
@@ -79,6 +81,10 @@ private:
     QAction *m_triggerAction = nullptr;
     QAction *m_nextCandidateAction = nullptr;
     QAction *m_previousCandidateAction = nullptr;
+    QAction *m_inlineEditTriggerAction = nullptr;
+    QAction *m_inlineEditAcceptAction = nullptr;
+    QAction *m_inlineEditDismissAction = nullptr;
 
     QHash<KTextEditor::View *, KateAiInlineCompletion::EditorSession *> m_sessions;
+    QHash<KTextEditor::View *, KateAiInlineCompletion::InlineEditSession *> m_inlineEditSessions;
 };
