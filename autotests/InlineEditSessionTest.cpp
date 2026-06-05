@@ -166,13 +166,13 @@ struct Harness {
         layout->setContentsMargins(0, 0, 0, 0);
 
         auto *editor = KTextEditor::Editor::instance();
-        Q_ASSERT(editor);
+        QVERIFY2(editor, "KTextEditor editor instance is unavailable");
         doc.reset(editor->createDocument(&window));
-        Q_ASSERT(doc);
+        QVERIFY2(doc, "Failed to create KTextEditor document");
         doc->setText(QStringLiteral("int main() {\n    return oldValue;\n}\n"));
 
         view = doc->createView(&window);
-        Q_ASSERT(view);
+        QVERIFY2(view, "Failed to create KTextEditor view");
         layout->addWidget(view);
         otherFocusWidget = new QPushButton(QStringLiteral("other"), &window);
         layout->addWidget(otherFocusWidget);

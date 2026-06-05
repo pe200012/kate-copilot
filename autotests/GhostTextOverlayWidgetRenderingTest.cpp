@@ -120,9 +120,10 @@ QRect findNonTransparentBounds(const QImage &image)
 
 void saveDebugImage(const QString &name, const QImage &image)
 {
-    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering");
-    QDir().mkpath(dirPath);
-    image.save(dirPath + QStringLiteral("/") + name + QStringLiteral(".png"));
+    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering-%1").arg(QCoreApplication::applicationPid());
+    QVERIFY2(QDir().mkpath(dirPath), qPrintable(QStringLiteral("failed to create render debug directory %1").arg(dirPath)));
+    const QString imagePath = dirPath + QStringLiteral("/") + name + QStringLiteral(".png");
+    QVERIFY2(image.save(imagePath), qPrintable(QStringLiteral("failed to save render debug image %1").arg(imagePath)));
 }
 
 int lineHeightPx(KTextEditor::View *view, int line)

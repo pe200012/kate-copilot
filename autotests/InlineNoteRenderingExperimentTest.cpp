@@ -160,7 +160,10 @@ RenderResult renderProbeImage(const QString &name, ProbeMode mode)
     RenderResult result;
 
     auto *editor = KTextEditor::Editor::instance();
-    Q_ASSERT(editor);
+    if (!editor) {
+        QTest::qFail("KTextEditor editor instance is unavailable", __FILE__, __LINE__);
+        return result;
+    }
 
     QWidget window;
     window.setWindowTitle(name);
@@ -170,7 +173,10 @@ RenderResult renderProbeImage(const QString &name, ProbeMode mode)
     layout->setContentsMargins(0, 0, 0, 0);
 
     QScopedPointer<KTextEditor::Document> document(editor->createDocument(&window));
-    Q_ASSERT(document);
+    if (!document) {
+        QTest::qFail("Failed to create KTextEditor document", __FILE__, __LINE__);
+        return result;
+    }
     document->setText(QStringLiteral("alpha\n"
                                      "beta\n"
                                      "gamma\n"
@@ -179,7 +185,10 @@ RenderResult renderProbeImage(const QString &name, ProbeMode mode)
                                      "zeta\n"));
 
     KTextEditor::View *view = document->createView(&window);
-    Q_ASSERT(view);
+    if (!view) {
+        QTest::qFail("Failed to create KTextEditor view", __FILE__, __LINE__);
+        return result;
+    }
     layout->addWidget(view);
 
     if (QWidget *editorWidget = view->editorWidget()) {
@@ -203,16 +212,28 @@ RenderResult renderProbeImage(const QString &name, ProbeMode mode)
     QCoreApplication::processEvents();
 
     QWidget *editorWidget = view->editorWidget();
-    Q_ASSERT(editorWidget);
+    if (!editorWidget) {
+        QTest::qFail("KTextEditor editor widget is unavailable", __FILE__, __LINE__);
+        view->unregisterInlineNoteProvider(&provider);
+        return result;
+    }
 
     result.image = editorWidget->grab().toImage().convertToFormat(QImage::Format_ARGB32);
     result.lineHeight = provider.lastLineHeight();
     result.devicePixelRatio = result.image.devicePixelRatio();
 
-    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering");
-    QDir().mkpath(dirPath);
+    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering-%1").arg(QCoreApplication::applicationPid());
+    if (!QDir().mkpath(dirPath)) {
+        QTest::qFail(qPrintable(QStringLiteral("failed to create render debug directory %1").arg(dirPath)), __FILE__, __LINE__);
+        view->unregisterInlineNoteProvider(&provider);
+        return result;
+    }
     result.imagePath = dirPath + QStringLiteral("/") + name + QStringLiteral(".png");
-    result.image.save(result.imagePath);
+    if (!result.image.save(result.imagePath)) {
+        QTest::qFail(qPrintable(QStringLiteral("failed to save render debug image %1").arg(result.imagePath)), __FILE__, __LINE__);
+        view->unregisterInlineNoteProvider(&provider);
+        return result;
+    }
 
     view->unregisterInlineNoteProvider(&provider);
     return result;

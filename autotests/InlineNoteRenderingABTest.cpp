@@ -172,14 +172,18 @@ QImage grabEditorWidget(QWidget *editorWidget)
 
 QString outputDirPath()
 {
-    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering");
-    QDir().mkpath(dirPath);
+    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering-%1").arg(QCoreApplication::applicationPid());
+    if (!QDir().mkpath(dirPath)) {
+        QTest::qFail(qPrintable(QStringLiteral("failed to create render debug directory %1").arg(dirPath)), __FILE__, __LINE__);
+        return {};
+    }
     return dirPath;
 }
 
 void saveDebugImage(const QString &name, const QImage &image)
 {
-    image.save(outputDirPath() + QStringLiteral("/") + name + QStringLiteral(".png"));
+    const QString imagePath = outputDirPath() + QStringLiteral("/") + name + QStringLiteral(".png");
+    QVERIFY2(image.save(imagePath), qPrintable(QStringLiteral("failed to save render debug image %1").arg(imagePath)));
 }
 
 QRect findChangedBoundsInRegion(const QImage &before, const QImage &after, const QRect &region)
@@ -215,7 +219,10 @@ KTextEditor::View *prepareView(const RenderScenario &scenario,
                                QScopedPointer<KTextEditor::Document> &document)
 {
     auto *editor = KTextEditor::Editor::instance();
-    Q_ASSERT(editor);
+    if (!editor) {
+        QTest::qFail("KTextEditor editor instance is unavailable", __FILE__, __LINE__);
+        return nullptr;
+    }
 
     window.resize(900, 420);
 
@@ -223,15 +230,24 @@ KTextEditor::View *prepareView(const RenderScenario &scenario,
     layout->setContentsMargins(0, 0, 0, 0);
 
     document.reset(editor->createDocument(&window));
-    Q_ASSERT(document);
+    if (!document) {
+        QTest::qFail("Failed to create KTextEditor document", __FILE__, __LINE__);
+        return nullptr;
+    }
     document->setText(scenario.documentText);
 
     KTextEditor::View *view = document->createView(&window);
-    Q_ASSERT(view);
+    if (!view) {
+        QTest::qFail("Failed to create KTextEditor view", __FILE__, __LINE__);
+        return nullptr;
+    }
     layout->addWidget(view);
 
     QWidget *editorWidget = view->editorWidget();
-    Q_ASSERT(editorWidget);
+    if (!editorWidget) {
+        QTest::qFail("KTextEditor editor widget is unavailable", __FILE__, __LINE__);
+        return nullptr;
+    }
 
     QFont font(QStringLiteral("Monospace"));
     font.setStyleHint(QFont::Monospace);
@@ -279,10 +295,15 @@ RenderArtifacts renderScenario(const QString &prefix,
     QWidget window;
     QScopedPointer<KTextEditor::Document> document;
     KTextEditor::View *view = prepareView(scenario, window, document);
-    Q_ASSERT(view);
+    if (!view) {
+        return result;
+    }
 
     QWidget *editorWidget = view->editorWidget();
-    Q_ASSERT(editorWidget);
+    if (!editorWidget) {
+        QTest::qFail("KTextEditor editor widget is unavailable", __FILE__, __LINE__);
+        return result;
+    }
 
     const QImage baselineImage = grabEditorWidget(editorWidget);
 

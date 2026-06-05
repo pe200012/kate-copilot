@@ -22,9 +22,17 @@ namespace
 std::unique_ptr<KTextEditor::Document> makeDocument(const QString &text)
 {
     auto *editor = KTextEditor::Editor::instance();
-    Q_ASSERT(editor);
+    if (!editor) {
+        QTest::qFail("KTextEditor editor instance is unavailable", __FILE__, __LINE__);
+        return {};
+    }
+
     std::unique_ptr<KTextEditor::Document> doc(editor->createDocument(nullptr));
-    Q_ASSERT(doc);
+    if (!doc) {
+        QTest::qFail("Failed to create KTextEditor document", __FILE__, __LINE__);
+        return {};
+    }
+
     doc->setText(text);
     return doc;
 }

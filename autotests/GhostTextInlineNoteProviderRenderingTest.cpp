@@ -74,9 +74,10 @@ QImage grabEditorWidget(QWidget *editorWidget)
 
 void saveDebugImage(const QString &name, const QImage &image)
 {
-    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering");
-    QDir().mkpath(dirPath);
-    image.save(dirPath + QStringLiteral("/") + name + QStringLiteral(".png"));
+    const QString dirPath = QDir::tempPath() + QStringLiteral("/kate-ai-inline-note-rendering-%1").arg(QCoreApplication::applicationPid());
+    QVERIFY2(QDir().mkpath(dirPath), qPrintable(QStringLiteral("failed to create render debug directory %1").arg(dirPath)));
+    const QString imagePath = dirPath + QStringLiteral("/") + name + QStringLiteral(".png");
+    QVERIFY2(image.save(imagePath), qPrintable(QStringLiteral("failed to save render debug image %1").arg(imagePath)));
 }
 
 enum class UpdateSignalMode {
@@ -155,7 +156,10 @@ private Q_SLOTS:
 static KTextEditor::View *prepareView(QWidget &window, QScopedPointer<KTextEditor::Document> &document)
 {
     auto *editor = KTextEditor::Editor::instance();
-    Q_ASSERT(editor);
+    if (!editor) {
+        QTest::qFail("KTextEditor editor instance is unavailable", __FILE__, __LINE__);
+        return nullptr;
+    }
 
     window.resize(900, 320);
 
@@ -163,15 +167,24 @@ static KTextEditor::View *prepareView(QWidget &window, QScopedPointer<KTextEdito
     layout->setContentsMargins(0, 0, 0, 0);
 
     document.reset(editor->createDocument(&window));
-    Q_ASSERT(document);
+    if (!document) {
+        QTest::qFail("Failed to create KTextEditor document", __FILE__, __LINE__);
+        return nullptr;
+    }
     document->setText(QStringLiteral("top\n\n\n\nbottom\n"));
 
     KTextEditor::View *view = document->createView(&window);
-    Q_ASSERT(view);
+    if (!view) {
+        QTest::qFail("Failed to create KTextEditor view", __FILE__, __LINE__);
+        return nullptr;
+    }
     layout->addWidget(view);
 
     QWidget *editorWidget = view->editorWidget();
-    Q_ASSERT(editorWidget);
+    if (!editorWidget) {
+        QTest::qFail("KTextEditor editor widget is unavailable", __FILE__, __LINE__);
+        return nullptr;
+    }
 
     QFont font(QStringLiteral("Monospace"));
     font.setStyleHint(QFont::Monospace);

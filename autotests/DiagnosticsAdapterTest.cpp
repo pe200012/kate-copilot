@@ -120,11 +120,24 @@ KTextEditor::Document *createOpenedDocument(const QString &path, const QString &
 {
     writeText(path, text);
     auto *editor = KTextEditor::Editor::instance();
-    Q_ASSERT(editor);
+    if (!editor) {
+        QTest::qFail("KTextEditor editor instance is unavailable", __FILE__, __LINE__);
+        return nullptr;
+    }
+
     auto *document = editor->createDocument(nullptr);
-    Q_ASSERT(document);
+    if (!document) {
+        QTest::qFail("Failed to create KTextEditor document", __FILE__, __LINE__);
+        return nullptr;
+    }
+
     const bool opened = document->openUrl(QUrl::fromLocalFile(path));
-    Q_ASSERT(opened);
+    if (!opened) {
+        QTest::qFail("Failed to open KTextEditor document URL", __FILE__, __LINE__);
+        document->deleteLater();
+        return nullptr;
+    }
+
     return document;
 }
 }
