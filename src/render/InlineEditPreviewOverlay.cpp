@@ -14,10 +14,51 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPalette>
+#include <QStringList>
 #include <QVariant>
+#include <QtGlobal>
+
+#include <algorithm>
 
 namespace KateAiInlineCompletion
 {
+namespace
+{
+[[nodiscard]] QStringList boundedPreviewLines(const ProposedEdit &edit, int index, int totalEdits, int maxLines)
+{
+    const int boundedMaxLines = qBound(1, maxLines, 50);
+    QString text = edit.newText;
+    if (text.isEmpty()) {
+        text = QStringLiteral("delete selected text");
+    }
+
+    QStringList lines = text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+    if (lines.isEmpty()) {
+        lines.push_back(text);
+    }
+
+    if (lines.size() > boundedMaxLines) {
+        lines = lines.mid(0, qMax(0, boundedMaxLines - 1));
+        lines.push_back(QStringLiteral("…"));
+    }
+
+    const QString prefix = totalEdits > 1 ? QStringLiteral("#%1: ").arg(index + 1) : QString();
+    lines[0].prepend(prefix);
+    return lines;
+}
+
+[[nodiscard]] QVector<ProposedEdit> editsInDocumentOrder(const QVector<ProposedEdit> &edits)
+{
+    QVector<ProposedEdit> ordered = edits;
+    std::sort(ordered.begin(), ordered.end(), [](const ProposedEdit &a, const ProposedEdit &b) {
+        if (a.range.start().line() != b.range.start().line()) {
+            return a.range.start().line() < b.range.start().line();
+        }
+        return a.range.start().column() < b.range.start().column();
+    });
+    return ordered;
+}
+} // namespace
 
 InlineEditPreviewOverlay::InlineEditPreviewOverlay(KTextEditor::View *view, QWidget *editorWidget)
     : QWidget(editorWidget)
@@ -66,6 +107,12 @@ void InlineEditPreviewOverlay::clear()
     setSuggestion({});
 }
 
+void InlineEditPreviewOverlay::setPreviewMaxLines(int maxLines)
+{
+    m_previewMaxLines = qBound(1, maxLines, 50);
+    update();
+}
+
 void InlineEditPreviewOverlay::refresh()
 {
     updateGeometryFromParent();
@@ -106,7 +153,6 @@ void InlineEditPreviewOverlay::paintEvent(QPaintEvent *event)
         return;
     }
 
-    const ProposedEdit edit = m_suggestion.edits.constFirst();
     const QRect clipRect = textAreaRectInEditorWidget();
     if (!clipRect.isValid()) {
         return;
@@ -114,12 +160,6 @@ void InlineEditPreviewOverlay::paintEvent(QPaintEvent *event)
 
     const int lineHeight = lineHeightPx();
     if (lineHeight <= 0) {
-        return;
-    }
-
-    const QPoint anchor = cursorToEditorWidget(edit.range.start());
-    const QStringList lines = m_suggestion.displayText.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
-    if (lines.isEmpty()) {
         return;
     }
 
@@ -138,35 +178,48 @@ void InlineEditPreviewOverlay::paintEvent(QPaintEvent *event)
     const QFontMetrics metrics(textFont);
     painter.setFont(textFont);
 
-    const int maxLines = qMin(lines.size(), 8);
     const int centeredTopOffset = qMax(0, (lineHeight - metrics.height()) / 2);
-    const int startX = qMax(clipRect.left(), anchor.x());
-
-    const int highlightHeight = qMax(lineHeight, (edit.range.end().line() - edit.range.start().line() + 1) * lineHeight);
-    painter.fillRect(QRect(clipRect.left(), anchor.y(), clipRect.width(), highlightHeight).intersected(clipRect), background);
+    const QVector<ProposedEdit> orderedEdits = editsInDocumentOrder(m_suggestion.edits);
+    const int totalEdits = orderedEdits.size();
 
     painter.setPen(previewText);
-    for (int i = 0; i < maxLines; ++i) {
-        const int y = anchor.y() + i * lineHeight;
-        if (y + lineHeight <= clipRect.top()) {
-            continue;
-        }
-        if (y > clipRect.bottom()) {
-            break;
-        }
-
-        const int x = (i == 0) ? startX : clipRect.left();
-        const int available = qMax(0, clipRect.right() - x + 1);
-        if (available <= 0) {
-            continue;
+    for (int editIndex = 0; editIndex < orderedEdits.size(); ++editIndex) {
+        const ProposedEdit &edit = orderedEdits.at(editIndex);
+        const QPoint anchor = cursorToEditorWidget(edit.range.start());
+        QStringList lines = boundedPreviewLines(edit, editIndex, totalEdits, m_previewMaxLines);
+        if (editIndex == 0 && totalEdits > 1) {
+            lines.prepend(m_suggestion.displayText.isEmpty() ? QStringLiteral("AI Inline Edit: %1 edits").arg(totalEdits) : m_suggestion.displayText);
         }
 
-        const QString line = metrics.elidedText(lines.at(i), Qt::ElideRight, available);
-        painter.drawText(QPoint(x, y + centeredTopOffset + metrics.ascent()), line);
+        const int renderedLines = qMin(lines.size(), qBound(1, m_previewMaxLines, 50));
+        const int startX = qMax(clipRect.left(), anchor.x());
+        const int touchedLineCount = qMax(1, edit.range.end().line() - edit.range.start().line() + 1);
+        const int highlightHeight = qMax(lineHeight, touchedLineCount * lineHeight);
+        painter.fillRect(QRect(clipRect.left(), anchor.y(), clipRect.width(), highlightHeight).intersected(clipRect), background);
+
+        painter.setPen(previewText);
+        for (int i = 0; i < renderedLines; ++i) {
+            const int y = anchor.y() + i * lineHeight;
+            if (y + lineHeight <= clipRect.top()) {
+                continue;
+            }
+            if (y > clipRect.bottom()) {
+                break;
+            }
+
+            const int x = (i == 0) ? startX : clipRect.left();
+            const int available = qMax(0, clipRect.right() - x + 1);
+            if (available <= 0) {
+                continue;
+            }
+
+            const QString line = metrics.elidedText(lines.at(i), Qt::ElideRight, available);
+            painter.drawText(QPoint(x, y + centeredTopOffset + metrics.ascent()), line);
+        }
+
+        painter.setPen(preview);
+        painter.drawRect(QRect(clipRect.left(), anchor.y(), clipRect.width() - 1, qMax(lineHeight, renderedLines * lineHeight) - 1).intersected(clipRect));
     }
-
-    painter.setPen(preview);
-    painter.drawRect(QRect(clipRect.left(), anchor.y(), clipRect.width() - 1, qMax(lineHeight, maxLines * lineHeight) - 1).intersected(clipRect));
 }
 
 bool InlineEditPreviewOverlay::eventFilter(QObject *watched, QEvent *event)

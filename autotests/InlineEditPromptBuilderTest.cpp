@@ -50,6 +50,7 @@ private Q_SLOTS:
     void includesCurrentLineTargetTextWhenNoSelection();
     void includesContextItemsWhenEnabled();
     void omitsContextItemsWhenDisabled();
+    void includesConfiguredMaxEditCount();
     void outputIsDeterministic();
 };
 
@@ -62,7 +63,8 @@ void InlineEditPromptBuilderTest::includesFileLanguageCursorAndJsonOnlyInstructi
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("File: /repo/src/foo.cpp")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("Language: C++")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("Cursor: line 42, column 13")));
-    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Return exactly one edit using the exact target range above.")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Return 1 to 4 non-overlapping edits inside the target range above.")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("validates and applies ranges transactionally")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("\"edits\"")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("\"newText\"")));
 }
@@ -111,6 +113,16 @@ void InlineEditPromptBuilderTest::omitsContextItemsWhenDisabled()
     QVERIFY(!prompt.userPrompt.contains(QStringLiteral("int newName();")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("Relevant context:")));
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("None")));
+}
+
+void InlineEditPromptBuilderTest::includesConfiguredMaxEditCount()
+{
+    InlineEditPromptOptions options;
+    options.maxEdits = 7;
+
+    const auto prompt = InlineEditPromptBuilder::build(baseContext(), options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Return 1 to 7 non-overlapping edits inside the target range above.")));
 }
 
 void InlineEditPromptBuilderTest::outputIsDeterministic()

@@ -4,7 +4,7 @@
 
     Module: InlineEditPreviewOverlay
 
-    Minimal visual preview for one structured inline edit suggestion.
+    Visual preview for structured single-range and multi-range inline edit suggestions.
 */
 
 #pragma once
@@ -31,6 +31,7 @@ public:
     ~InlineEditPreviewOverlay() override;
 
     void setSuggestion(const InlineEditSuggestion &suggestion);
+    void setPreviewMaxLines(int maxLines);
     void clear();
     void refresh();
 
@@ -51,6 +52,7 @@ private:
     QPointer<KTextEditor::View> m_view;
     QPointer<QWidget> m_editorWidget;
     InlineEditSuggestion m_suggestion;
+    int m_previewMaxLines = 8;
 };
 
 } // namespace KateAiInlineCompletion

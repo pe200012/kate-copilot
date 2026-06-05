@@ -84,6 +84,12 @@ struct CompletionSettings {
     static constexpr int kSpeculativeRequestMaxTokensMax = 512;
     static constexpr int kInlineEditMaxNewTextCharsMin = 100;
     static constexpr int kInlineEditMaxNewTextCharsMax = 50000;
+    static constexpr int kInlineEditMaxEditsMin = 1;
+    static constexpr int kInlineEditMaxEditsMax = 20;
+    static constexpr int kInlineEditMaxTotalNewTextCharsMin = 100;
+    static constexpr int kInlineEditMaxTotalNewTextCharsMax = 100000;
+    static constexpr int kInlineEditPreviewMaxLinesMin = 1;
+    static constexpr int kInlineEditPreviewMaxLinesMax = 50;
     static constexpr int kInlineEditExcerptCharsMin = 0;
     static constexpr int kInlineEditExcerptCharsMax = 20000;
 
@@ -160,8 +166,12 @@ struct CompletionSettings {
 
     bool enableInlineEdits = true;
     int inlineEditMaxNewTextChars = 8000;
+    int inlineEditMaxEdits = 4;
+    int inlineEditMaxTotalNewTextChars = 16000;
     int inlineEditMaxPrefixChars = 6000;
     int inlineEditMaxSuffixChars = 3000;
+    bool inlineEditAllowDeletion = true;
+    int inlineEditPreviewMaxLines = 8;
     bool inlineEditUseContext = true;
     bool inlineEditCopilotExperimental = false;
 

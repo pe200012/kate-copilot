@@ -202,6 +202,8 @@ private Q_SLOTS:
     void triggerCreatesRequestForSelectedRange();
     void validResponseCreatesPreview();
     void acceptAppliesReplacementTransactionally();
+    void multiRangeResponseCreatesPreviewAndAcceptAppliesTransactionally();
+    void overlappingResponseDoesNotCreatePreview();
     void responseOutsideRequestedRangeDoesNotCreatePreview();
     void selectionChangeCancelsActiveRequest();
     void dismissClearsPreview();
@@ -262,6 +264,44 @@ void InlineEditSessionTest::acceptAppliesReplacementTransactionally()
 
     QCOMPARE(harness.doc->text(), QStringLiteral("int main() {\n    return newValue;\n}\n"));
     QVERIFY(!harness.session->hasPreview());
+}
+
+void InlineEditSessionTest::multiRangeResponseCreatesPreviewAndAcceptAppliesTransactionally()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(
+        R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"},{"startLine":1,"startColumn":5,"endLine":1,"endColumn":9,"newText":"entry"}]})"));
+
+    Harness harness(server.endpoint());
+    harness.view->setSelection(KTextEditor::Range(0, 0, 2, 1));
+    harness.session->triggerInlineEdit();
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasPreview(), 2000);
+    QCOMPARE(harness.session->currentSuggestion().edits.size(), 2);
+    QCOMPARE(harness.session->currentSuggestion().displayText, QStringLiteral("AI Inline Edit: 2 edits"));
+
+    harness.session->acceptInlineEdit();
+
+    QCOMPARE(harness.doc->text(), QStringLiteral("int entry() {\n    return newValue;\n}\n"));
+    QVERIFY(!harness.session->hasPreview());
+}
+
+void InlineEditSessionTest::overlappingResponseDoesNotCreatePreview()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(
+        R"({"edits":[{"startLine":2,"startColumn":5,"endLine":2,"endColumn":16,"newText":"return x"},{"startLine":2,"startColumn":12,"endLine":2,"endColumn":21,"newText":"newValue;"}]})"));
+
+    Harness harness(server.endpoint());
+    harness.view->setSelection(KTextEditor::Range(1, 4, 1, 20));
+    harness.session->triggerInlineEdit();
+
+    QTRY_COMPARE_WITH_TIMEOUT(server.requestCount(), 1, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.session->hasActiveRequest(), 2000);
+    QVERIFY(!harness.session->hasPreview());
+    QCOMPARE(harness.doc->text(), QStringLiteral("int main() {\n    return oldValue;\n}\n"));
 }
 
 void InlineEditSessionTest::responseOutsideRequestedRangeDoesNotCreatePreview()

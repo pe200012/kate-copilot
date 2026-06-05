@@ -142,6 +142,13 @@ CompletionSettings CompletionSettings::validated() const
     out.inlineEditMaxNewTextChars = qBound(kInlineEditMaxNewTextCharsMin,
                                            out.inlineEditMaxNewTextChars,
                                            kInlineEditMaxNewTextCharsMax);
+    out.inlineEditMaxEdits = qBound(kInlineEditMaxEditsMin, out.inlineEditMaxEdits, kInlineEditMaxEditsMax);
+    out.inlineEditMaxTotalNewTextChars = qBound(kInlineEditMaxTotalNewTextCharsMin,
+                                                out.inlineEditMaxTotalNewTextChars,
+                                                kInlineEditMaxTotalNewTextCharsMax);
+    out.inlineEditPreviewMaxLines = qBound(kInlineEditPreviewMaxLinesMin,
+                                           out.inlineEditPreviewMaxLines,
+                                           kInlineEditPreviewMaxLinesMax);
     out.inlineEditMaxPrefixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxPrefixChars, kInlineEditExcerptCharsMax);
     out.inlineEditMaxSuffixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxSuffixChars, kInlineEditExcerptCharsMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
@@ -239,8 +246,12 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.speculativeRequestMaxTokens = group.readEntry("SpeculativeRequestMaxTokens", d.speculativeRequestMaxTokens);
     out.enableInlineEdits = group.readEntry("EnableInlineEdits", d.enableInlineEdits);
     out.inlineEditMaxNewTextChars = group.readEntry("InlineEditMaxNewTextChars", d.inlineEditMaxNewTextChars);
+    out.inlineEditMaxEdits = group.readEntry("InlineEditMaxEdits", d.inlineEditMaxEdits);
+    out.inlineEditMaxTotalNewTextChars = group.readEntry("InlineEditMaxTotalNewTextChars", d.inlineEditMaxTotalNewTextChars);
     out.inlineEditMaxPrefixChars = group.readEntry("InlineEditMaxPrefixChars", d.inlineEditMaxPrefixChars);
     out.inlineEditMaxSuffixChars = group.readEntry("InlineEditMaxSuffixChars", d.inlineEditMaxSuffixChars);
+    out.inlineEditAllowDeletion = group.readEntry("InlineEditAllowDeletion", d.inlineEditAllowDeletion);
+    out.inlineEditPreviewMaxLines = group.readEntry("InlineEditPreviewMaxLines", d.inlineEditPreviewMaxLines);
     out.inlineEditUseContext = group.readEntry("InlineEditUseContext", d.inlineEditUseContext);
     out.inlineEditCopilotExperimental = group.readEntry("InlineEditCopilotExperimental", d.inlineEditCopilotExperimental);
 
@@ -311,8 +322,12 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("SpeculativeRequestMaxTokens", v.speculativeRequestMaxTokens);
     group.writeEntry("EnableInlineEdits", v.enableInlineEdits);
     group.writeEntry("InlineEditMaxNewTextChars", v.inlineEditMaxNewTextChars);
+    group.writeEntry("InlineEditMaxEdits", v.inlineEditMaxEdits);
+    group.writeEntry("InlineEditMaxTotalNewTextChars", v.inlineEditMaxTotalNewTextChars);
     group.writeEntry("InlineEditMaxPrefixChars", v.inlineEditMaxPrefixChars);
     group.writeEntry("InlineEditMaxSuffixChars", v.inlineEditMaxSuffixChars);
+    group.writeEntry("InlineEditAllowDeletion", v.inlineEditAllowDeletion);
+    group.writeEntry("InlineEditPreviewMaxLines", v.inlineEditPreviewMaxLines);
     group.writeEntry("InlineEditUseContext", v.inlineEditUseContext);
     group.writeEntry("InlineEditCopilotExperimental", v.inlineEditCopilotExperimental);
 

@@ -4,7 +4,7 @@
 
     Module: InlineEditSession
 
-    Per-view controller for manual single-range inline edits.
+    Per-view controller for manual inline edit suggestions.
 */
 
 #pragma once
@@ -109,6 +109,8 @@ private:
     quint64 m_activeRequestId = 0;
     QString m_activeResponse;
     KTextEditor::Range m_activeTargetRange = KTextEditor::Range::invalid();
+    qint64 m_activeDocumentRevision = -1;
+    qint64 m_previewDocumentRevision = -1;
     InlineEditSuggestion m_currentSuggestion;
     bool m_ignoreDocumentChange = false;
 };

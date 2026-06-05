@@ -335,7 +335,19 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_inlineEditMaxNewTextChars->setObjectName(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
     m_inlineEditMaxNewTextChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditMaxNewTextCharsMin,
                                           KateAiInlineCompletion::CompletionSettings::kInlineEditMaxNewTextCharsMax);
-    inlineEditForm->addRow(i18n("Max replacement characters"), m_inlineEditMaxNewTextChars);
+    inlineEditForm->addRow(i18n("Max replacement characters per edit"), m_inlineEditMaxNewTextChars);
+
+    m_inlineEditMaxEdits = new QSpinBox(m_inlineEditBox);
+    m_inlineEditMaxEdits->setObjectName(QStringLiteral("inlineEditMaxEditsSpinBox"));
+    m_inlineEditMaxEdits->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditMaxEditsMin,
+                                   KateAiInlineCompletion::CompletionSettings::kInlineEditMaxEditsMax);
+    inlineEditForm->addRow(i18n("Max edits per suggestion"), m_inlineEditMaxEdits);
+
+    m_inlineEditMaxTotalNewTextChars = new QSpinBox(m_inlineEditBox);
+    m_inlineEditMaxTotalNewTextChars->setObjectName(QStringLiteral("inlineEditMaxTotalNewTextCharsSpinBox"));
+    m_inlineEditMaxTotalNewTextChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditMaxTotalNewTextCharsMin,
+                                               KateAiInlineCompletion::CompletionSettings::kInlineEditMaxTotalNewTextCharsMax);
+    inlineEditForm->addRow(i18n("Max total replacement characters"), m_inlineEditMaxTotalNewTextChars);
 
     m_inlineEditMaxPrefixChars = new QSpinBox(m_inlineEditBox);
     m_inlineEditMaxPrefixChars->setObjectName(QStringLiteral("inlineEditMaxPrefixCharsSpinBox"));
@@ -348,6 +360,16 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     m_inlineEditMaxSuffixChars->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMin,
                                          KateAiInlineCompletion::CompletionSettings::kInlineEditExcerptCharsMax);
     inlineEditForm->addRow(i18n("Max suffix excerpt characters"), m_inlineEditMaxSuffixChars);
+
+    m_inlineEditAllowDeletion = new QCheckBox(i18n("Allow deletion edits"), m_inlineEditBox);
+    m_inlineEditAllowDeletion->setObjectName(QStringLiteral("inlineEditAllowDeletionCheckBox"));
+    inlineEditForm->addRow(m_inlineEditAllowDeletion);
+
+    m_inlineEditPreviewMaxLines = new QSpinBox(m_inlineEditBox);
+    m_inlineEditPreviewMaxLines->setObjectName(QStringLiteral("inlineEditPreviewMaxLinesSpinBox"));
+    m_inlineEditPreviewMaxLines->setRange(KateAiInlineCompletion::CompletionSettings::kInlineEditPreviewMaxLinesMin,
+                                          KateAiInlineCompletion::CompletionSettings::kInlineEditPreviewMaxLinesMax);
+    inlineEditForm->addRow(i18n("Preview max changed lines"), m_inlineEditPreviewMaxLines);
 
     m_inlineEditUseContext = new QCheckBox(i18n("Use contextual prompt for inline edits"), m_inlineEditBox);
     m_inlineEditUseContext->setObjectName(QStringLiteral("inlineEditUseContextCheckBox"));
@@ -564,8 +586,12 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
 
     connect(m_enableInlineEdits, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditMaxNewTextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditMaxEdits, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditMaxTotalNewTextChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditMaxPrefixChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditMaxSuffixChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditAllowDeletion, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_inlineEditPreviewMaxLines, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditUseContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditCopilotExperimental, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
 
@@ -913,8 +939,12 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
 
     m_enableInlineEdits->setChecked(v.enableInlineEdits);
     m_inlineEditMaxNewTextChars->setValue(v.inlineEditMaxNewTextChars);
+    m_inlineEditMaxEdits->setValue(v.inlineEditMaxEdits);
+    m_inlineEditMaxTotalNewTextChars->setValue(v.inlineEditMaxTotalNewTextChars);
     m_inlineEditMaxPrefixChars->setValue(v.inlineEditMaxPrefixChars);
     m_inlineEditMaxSuffixChars->setValue(v.inlineEditMaxSuffixChars);
+    m_inlineEditAllowDeletion->setChecked(v.inlineEditAllowDeletion);
+    m_inlineEditPreviewMaxLines->setValue(v.inlineEditPreviewMaxLines);
     m_inlineEditUseContext->setChecked(v.inlineEditUseContext);
     m_inlineEditCopilotExperimental->setChecked(v.inlineEditCopilotExperimental);
 
@@ -977,8 +1007,12 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
 
     s.enableInlineEdits = m_enableInlineEdits->isChecked();
     s.inlineEditMaxNewTextChars = m_inlineEditMaxNewTextChars->value();
+    s.inlineEditMaxEdits = m_inlineEditMaxEdits->value();
+    s.inlineEditMaxTotalNewTextChars = m_inlineEditMaxTotalNewTextChars->value();
     s.inlineEditMaxPrefixChars = m_inlineEditMaxPrefixChars->value();
     s.inlineEditMaxSuffixChars = m_inlineEditMaxSuffixChars->value();
+    s.inlineEditAllowDeletion = m_inlineEditAllowDeletion->isChecked();
+    s.inlineEditPreviewMaxLines = m_inlineEditPreviewMaxLines->value();
     s.inlineEditUseContext = m_inlineEditUseContext->isChecked();
     s.inlineEditCopilotExperimental = m_inlineEditCopilotExperimental->isChecked();
 
@@ -1070,8 +1104,12 @@ void KateAiConfigPage::updateInlineEditControlsUi()
 
     const bool inlineEditsEnabled = m_enableInlineEdits->isChecked();
     m_inlineEditMaxNewTextChars->setEnabled(inlineEditsEnabled);
+    m_inlineEditMaxEdits->setEnabled(inlineEditsEnabled);
+    m_inlineEditMaxTotalNewTextChars->setEnabled(inlineEditsEnabled);
     m_inlineEditMaxPrefixChars->setEnabled(inlineEditsEnabled);
     m_inlineEditMaxSuffixChars->setEnabled(inlineEditsEnabled);
+    m_inlineEditAllowDeletion->setEnabled(inlineEditsEnabled);
+    m_inlineEditPreviewMaxLines->setEnabled(inlineEditsEnabled);
     m_inlineEditUseContext->setEnabled(inlineEditsEnabled);
     m_inlineEditCopilotExperimental->setEnabled(inlineEditsEnabled);
 }

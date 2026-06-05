@@ -4,7 +4,7 @@
 
     Module: InlineEditParser
 
-    Parses structured JSON inline edit responses into validated single-range suggestions.
+    Parses structured JSON inline edit responses into bounded multi-range suggestions.
 */
 
 #pragma once
@@ -21,6 +21,8 @@ namespace KateAiInlineCompletion
 
 struct InlineEditParserOptions {
     int maxNewTextChars = 8000;
+    int maxTotalNewTextChars = 16000;
+    int maxEdits = 4;
     bool allowDeletion = false;
     KTextEditor::Range expectedRange = KTextEditor::Range::invalid();
 };

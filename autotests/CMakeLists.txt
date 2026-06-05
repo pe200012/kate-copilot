@@ -105,6 +105,31 @@ target_include_directories(kateaiinlinecompletion_inline_edit_parser_test
         ${CMAKE_SOURCE_DIR}/src
 )
 
+ecm_add_test(InlineEditValidatorTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_validator_test
+    LINK_LIBRARIES
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_validator_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+ecm_add_test(InlineEditApplierTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_applier_test
+    LINK_LIBRARIES
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_applier_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 ecm_add_test(InlineEditPromptBuilderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
     TEST_NAME kateaiinlinecompletion_inline_edit_prompt_builder_test
@@ -129,9 +154,11 @@ ecm_add_test(InlineEditSessionTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextOverlayWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/render/InlineEditPreviewOverlay.cpp
@@ -320,9 +347,11 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp
@@ -377,9 +406,11 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/session/CompletionStrategyEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionAnchorTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/session/SuggestionPostProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ProjectContextResolver.cpp
     ${CMAKE_SOURCE_DIR}/src/context/CurrentFileContextProvider.cpp

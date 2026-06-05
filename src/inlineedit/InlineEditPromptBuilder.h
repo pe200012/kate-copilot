@@ -4,7 +4,7 @@
 
     Module: InlineEditPromptBuilder
 
-    Builds deterministic chat prompts for structured single-range inline edits.
+    Builds deterministic chat prompts for structured inline edits.
 */
 
 #pragma once
@@ -22,6 +22,7 @@ struct InlineEditPrompt {
 struct InlineEditPromptOptions {
     bool useContext = true;
     int maxContextChars = 6000;
+    int maxEdits = 4;
 };
 
 class InlineEditPromptBuilder final

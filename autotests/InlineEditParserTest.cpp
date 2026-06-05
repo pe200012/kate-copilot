@@ -52,8 +52,16 @@ private Q_SLOTS:
     void rejectsEmptyNewTextWhenDeletionDisabled();
     void rejectsNoOpReplacement();
     void rejectsNewTextAboveMax();
+    void parsesMultipleEdits();
+    void preservesReturnedOrdering();
+    void convertsAllPositionsToZeroBasedRanges();
+    void parsesDeletionEditWithEmptyNewText();
+    void rejectsNoOpInsertionWithEmptyText();
+    void rejectsMalformedEditObject();
+    void respectsMaxEditCount();
+    void respectsTotalNewTextCharLimit();
     void rejectsMissingOrNonStringNewTextWhenDeletionEnabled();
-    void rejectsMultipleEdits();
+    void acceptsRangeInsideExpectedRange();
     void rejectsRangeDifferentFromExpectedRange();
     void normalizesCrLf();
 };
@@ -139,6 +147,101 @@ void InlineEditParserTest::rejectsNewTextAboveMax()
     QVERIFY(!InlineEditParser::parse(response, doc.get(), options).valid);
 }
 
+void InlineEditParserTest::parsesMultipleEdits()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\nbeta\ngamma\n"));
+    const QString response = QStringLiteral(
+        R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"ALPHA"},{"startLine":3,"startColumn":1,"endLine":3,"endColumn":6,"newText":"GAMMA"}],"rationale":"two sites"})");
+
+    const auto suggestion = InlineEditParser::parse(response, doc.get());
+
+    QVERIFY(suggestion.valid);
+    QCOMPARE(suggestion.edits.size(), 2);
+    QCOMPARE(suggestion.edits.at(0).newText, QStringLiteral("ALPHA"));
+    QCOMPARE(suggestion.edits.at(1).newText, QStringLiteral("GAMMA"));
+    QCOMPARE(suggestion.rationale, QStringLiteral("two sites"));
+}
+
+void InlineEditParserTest::preservesReturnedOrdering()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\nbeta\ngamma\n"));
+    const QString response = QStringLiteral(
+        R"({"edits":[{"startLine":3,"startColumn":1,"endLine":3,"endColumn":6,"newText":"third"},{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"first"}]})");
+
+    const auto suggestion = InlineEditParser::parse(response, doc.get());
+
+    QVERIFY(suggestion.valid);
+    QCOMPARE(suggestion.edits.at(0).range, KTextEditor::Range(2, 0, 2, 5));
+    QCOMPARE(suggestion.edits.at(1).range, KTextEditor::Range(0, 0, 0, 5));
+}
+
+void InlineEditParserTest::convertsAllPositionsToZeroBasedRanges()
+{
+    auto doc = makeDocument(QStringLiteral("0123456789\nabcdefghij\n"));
+    const QString response = QStringLiteral(
+        R"({"edits":[{"startLine":1,"startColumn":2,"endLine":1,"endColumn":4,"newText":"XX"},{"startLine":2,"startColumn":3,"endLine":2,"endColumn":8,"newText":"YYYYY"}]})");
+
+    const auto suggestion = InlineEditParser::parse(response, doc.get());
+
+    QVERIFY(suggestion.valid);
+    QCOMPARE(suggestion.edits.at(0).range, KTextEditor::Range(0, 1, 0, 3));
+    QCOMPARE(suggestion.edits.at(1).range, KTextEditor::Range(1, 2, 1, 7));
+}
+
+void InlineEditParserTest::parsesDeletionEditWithEmptyNewText()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\nbeta\n"));
+    InlineEditParserOptions options;
+    options.allowDeletion = true;
+    const QString response = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":""}]})");
+
+    const auto suggestion = InlineEditParser::parse(response, doc.get(), options);
+
+    QVERIFY(suggestion.valid);
+    QCOMPARE(suggestion.edits.constFirst().range, KTextEditor::Range(0, 0, 0, 5));
+    QCOMPARE(suggestion.edits.constFirst().newText, QString());
+}
+
+void InlineEditParserTest::rejectsNoOpInsertionWithEmptyText()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\n"));
+    InlineEditParserOptions options;
+    options.allowDeletion = true;
+    const QString response = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":1,"newText":""}]})");
+
+    QVERIFY(!InlineEditParser::parse(response, doc.get(), options).valid);
+}
+
+void InlineEditParserTest::rejectsMalformedEditObject()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\n"));
+    const QString response = QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":"bad","endColumn":6,"newText":"omega"}]})");
+
+    QVERIFY(!InlineEditParser::parse(response, doc.get()).valid);
+}
+
+void InlineEditParserTest::respectsMaxEditCount()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\nbeta\ngamma\n"));
+    InlineEditParserOptions options;
+    options.maxEdits = 1;
+    const QString response = QStringLiteral(
+        R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"ALPHA"},{"startLine":2,"startColumn":1,"endLine":2,"endColumn":5,"newText":"BETA"}]})");
+
+    QVERIFY(!InlineEditParser::parse(response, doc.get(), options).valid);
+}
+
+void InlineEditParserTest::respectsTotalNewTextCharLimit()
+{
+    auto doc = makeDocument(QStringLiteral("alpha\nbeta\n"));
+    InlineEditParserOptions options;
+    options.maxTotalNewTextChars = 6;
+    const QString response = QStringLiteral(
+        R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"ALPHA"},{"startLine":2,"startColumn":1,"endLine":2,"endColumn":5,"newText":"BETA"}]})");
+
+    QVERIFY(!InlineEditParser::parse(response, doc.get(), options).valid);
+}
+
 void InlineEditParserTest::rejectsMissingOrNonStringNewTextWhenDeletionEnabled()
 {
     auto doc = makeDocument(QStringLiteral("alpha\n"));
@@ -152,13 +255,17 @@ void InlineEditParserTest::rejectsMissingOrNonStringNewTextWhenDeletionEnabled()
     QVERIFY(!InlineEditParser::parse(nonString, doc.get(), options).valid);
 }
 
-void InlineEditParserTest::rejectsMultipleEdits()
+void InlineEditParserTest::acceptsRangeInsideExpectedRange()
 {
     auto doc = makeDocument(QStringLiteral("alpha\nbeta\n"));
-    const QString response = QStringLiteral(
-        R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":6,"newText":"omega"},{"startLine":2,"startColumn":1,"endLine":2,"endColumn":5,"newText":"BETA"}]})");
+    InlineEditParserOptions options;
+    options.expectedRange = KTextEditor::Range(0, 0, 1, 4);
+    const QString response = QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":1,"endLine":2,"endColumn":5,"newText":"BETA"}]})");
 
-    QVERIFY(!InlineEditParser::parse(response, doc.get()).valid);
+    const auto suggestion = InlineEditParser::parse(response, doc.get(), options);
+
+    QVERIFY(suggestion.valid);
+    QCOMPARE(suggestion.edits.constFirst().range, KTextEditor::Range(1, 0, 1, 4));
 }
 
 void InlineEditParserTest::rejectsRangeDifferentFromExpectedRange()

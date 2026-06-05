@@ -142,8 +142,12 @@ private:
     QGroupBox *m_inlineEditBox = nullptr;
     QCheckBox *m_enableInlineEdits = nullptr;
     QSpinBox *m_inlineEditMaxNewTextChars = nullptr;
+    QSpinBox *m_inlineEditMaxEdits = nullptr;
+    QSpinBox *m_inlineEditMaxTotalNewTextChars = nullptr;
     QSpinBox *m_inlineEditMaxPrefixChars = nullptr;
     QSpinBox *m_inlineEditMaxSuffixChars = nullptr;
+    QCheckBox *m_inlineEditAllowDeletion = nullptr;
+    QSpinBox *m_inlineEditPreviewMaxLines = nullptr;
     QCheckBox *m_inlineEditUseContext = nullptr;
     QCheckBox *m_inlineEditCopilotExperimental = nullptr;
 

@@ -68,6 +68,10 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *speculativeRequests = page.findChild<QCheckBox *>(QStringLiteral("speculativeRequestsCheckBox"));
     auto *inlineEdits = page.findChild<QCheckBox *>(QStringLiteral("inlineEditsCheckBox"));
     auto *inlineEditMaxNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
+    auto *inlineEditMaxEdits = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxEditsSpinBox"));
+    auto *inlineEditMaxTotalNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxTotalNewTextCharsSpinBox"));
+    auto *inlineEditAllowDeletion = page.findChild<QCheckBox *>(QStringLiteral("inlineEditAllowDeletionCheckBox"));
+    auto *inlineEditPreviewMaxLines = page.findChild<QSpinBox *>(QStringLiteral("inlineEditPreviewMaxLinesSpinBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -90,6 +94,10 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(speculativeRequests);
     QVERIFY(inlineEdits);
     QVERIFY(inlineEditMaxNewText);
+    QVERIFY(inlineEditMaxEdits);
+    QVERIFY(inlineEditMaxTotalNewText);
+    QVERIFY(inlineEditAllowDeletion);
+    QVERIFY(inlineEditPreviewMaxLines);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -330,36 +338,56 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
 
     auto *inlineEdits = page.findChild<QCheckBox *>(QStringLiteral("inlineEditsCheckBox"));
     auto *maxNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxNewTextCharsSpinBox"));
+    auto *maxEdits = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxEditsSpinBox"));
+    auto *maxTotalNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxTotalNewTextCharsSpinBox"));
     auto *maxPrefix = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxPrefixCharsSpinBox"));
     auto *maxSuffix = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxSuffixCharsSpinBox"));
+    auto *allowDeletion = page.findChild<QCheckBox *>(QStringLiteral("inlineEditAllowDeletionCheckBox"));
+    auto *previewMaxLines = page.findChild<QSpinBox *>(QStringLiteral("inlineEditPreviewMaxLinesSpinBox"));
     auto *useContext = page.findChild<QCheckBox *>(QStringLiteral("inlineEditUseContextCheckBox"));
     auto *copilotExperimental = page.findChild<QCheckBox *>(QStringLiteral("inlineEditCopilotExperimentalCheckBox"));
 
     QVERIFY(inlineEdits);
     QVERIFY(maxNewText);
+    QVERIFY(maxEdits);
+    QVERIFY(maxTotalNewText);
     QVERIFY(maxPrefix);
     QVERIFY(maxSuffix);
+    QVERIFY(allowDeletion);
+    QVERIFY(previewMaxLines);
     QVERIFY(useContext);
     QVERIFY(copilotExperimental);
 
     inlineEdits->setChecked(false);
     maxNewText->setValue(12345);
+    maxEdits->setValue(5);
+    maxTotalNewText->setValue(23456);
     maxPrefix->setValue(2345);
     maxSuffix->setValue(1234);
+    allowDeletion->setChecked(false);
+    previewMaxLines->setValue(9);
     useContext->setChecked(false);
     copilotExperimental->setChecked(true);
 
     QVERIFY(!maxNewText->isEnabled());
+    QVERIFY(!maxEdits->isEnabled());
+    QVERIFY(!maxTotalNewText->isEnabled());
     QVERIFY(!maxPrefix->isEnabled());
     QVERIFY(!maxSuffix->isEnabled());
+    QVERIFY(!allowDeletion->isEnabled());
+    QVERIFY(!previewMaxLines->isEnabled());
 
     page.apply();
 
     const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
     QCOMPARE(out.enableInlineEdits, false);
     QCOMPARE(out.inlineEditMaxNewTextChars, 12345);
+    QCOMPARE(out.inlineEditMaxEdits, 5);
+    QCOMPARE(out.inlineEditMaxTotalNewTextChars, 23456);
     QCOMPARE(out.inlineEditMaxPrefixChars, 2345);
     QCOMPARE(out.inlineEditMaxSuffixChars, 1234);
+    QCOMPARE(out.inlineEditAllowDeletion, false);
+    QCOMPARE(out.inlineEditPreviewMaxLines, 9);
     QCOMPARE(out.inlineEditUseContext, false);
     QCOMPARE(out.inlineEditCopilotExperimental, true);
 }

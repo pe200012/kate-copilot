@@ -29,7 +29,9 @@ struct InlineEditSuggestion {
     QVector<ProposedEdit> edits;
     QString rawResponse;
     QString displayText;
+    QString rationale;
     QString source = QStringLiteral("manual");
+    QString id;
     bool valid = false;
 };
 

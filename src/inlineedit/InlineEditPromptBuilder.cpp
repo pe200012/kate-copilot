@@ -115,7 +115,9 @@ InlineEditPrompt InlineEditPromptBuilder::build(const InlineEditRequestContext &
     lines << QStringLiteral("Relevant context:");
     lines << renderContextItems(context.contextItems, options);
     lines << QString();
-    lines << QStringLiteral("Return exactly one edit using the exact target range above.");
+    lines << QStringLiteral("Return 1 to %1 non-overlapping edits inside the target range above.").arg(qMax(1, options.maxEdits));
+    lines << QStringLiteral("Use the smallest edit set that solves the request; prefer one edit for local changes.");
+    lines << QStringLiteral("Preserve edit order by importance; the client validates and applies ranges transactionally.");
     lines << QStringLiteral("Return:");
     lines << QStringLiteral("{");
     lines << QStringLiteral("  \"edits\": [");

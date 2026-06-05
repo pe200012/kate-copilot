@@ -17,8 +17,10 @@
 #include "context/ProjectTraitsContextProvider.h"
 #include "context/RecentEditsContextProvider.h"
 #include "context/RelatedFilesContextProvider.h"
+#include "inlineedit/InlineEditApplier.h"
 #include "inlineedit/InlineEditParser.h"
 #include "inlineedit/InlineEditPromptBuilder.h"
+#include "inlineedit/InlineEditValidator.h"
 #include "network/AbstractAIProvider.h"
 #include "network/CopilotCodexProvider.h"
 #include "network/OpenAICompatibleProvider.h"
@@ -84,12 +86,15 @@ namespace
     return options;
 }
 
-[[nodiscard]] bool rangeStartsAfter(const ProposedEdit &a, const ProposedEdit &b)
+[[nodiscard]] InlineEditValidationOptions inlineEditValidationOptionsFromSettings(const CompletionSettings &settings, qint64 expectedDocumentRevision)
 {
-    if (a.range.start().line() != b.range.start().line()) {
-        return a.range.start().line() > b.range.start().line();
-    }
-    return a.range.start().column() > b.range.start().column();
+    InlineEditValidationOptions options;
+    options.maxEdits = settings.inlineEditMaxEdits;
+    options.maxNewTextChars = settings.inlineEditMaxNewTextChars;
+    options.maxTotalNewTextChars = settings.inlineEditMaxTotalNewTextChars;
+    options.allowDeletion = settings.inlineEditAllowDeletion;
+    options.expectedDocumentRevision = expectedDocumentRevision;
+    return options;
 }
 
 [[nodiscard]] int inlineEditMaxTokens(const CompletionSettings &settings)
@@ -236,6 +241,7 @@ void InlineEditSession::triggerInlineEdit()
     InlineEditPromptOptions promptOptions;
     promptOptions.useContext = settings.inlineEditUseContext;
     promptOptions.maxContextChars = settings.maxContextChars;
+    promptOptions.maxEdits = settings.inlineEditMaxEdits;
     const InlineEditPrompt prompt = InlineEditPromptBuilder::build(context, promptOptions);
 
     CompletionRequest request;
@@ -257,6 +263,7 @@ void InlineEditSession::triggerInlineEdit()
 
     m_activeResponse.clear();
     m_activeTargetRange = targetRange;
+    m_activeDocumentRevision = m_view->document()->revision();
     m_activeRequestId = m_provider->start(request);
     Q_EMIT requestStateChanged(true);
 }
@@ -267,19 +274,15 @@ void InlineEditSession::acceptInlineEdit()
         return;
     }
 
-    QVector<ProposedEdit> edits = m_currentSuggestion.edits;
-    std::sort(edits.begin(), edits.end(), rangeStartsAfter);
-
     KTextEditor::Document *document = m_view->document();
-    QScopedValueRollback<bool> ignoreDocumentChange(m_ignoreDocumentChange, true);
-    KTextEditor::Document::EditingTransaction transaction(document);
-    bool ok = true;
-    for (const ProposedEdit &edit : std::as_const(edits)) {
-        ok = document->replaceText(edit.range, edit.newText) && ok;
-    }
+    const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
+    const InlineEditValidationOptions options = inlineEditValidationOptionsFromSettings(settings, m_previewDocumentRevision);
 
-    if (!ok) {
-        showError(i18n("Failed to apply AI inline edit"));
+    QScopedValueRollback<bool> ignoreDocumentChange(m_ignoreDocumentChange, true);
+    const InlineEditApplyResult result = InlineEditApplier::apply(document, m_currentSuggestion, options);
+    if (!result.ok) {
+        clearPreview();
+        showError(i18n("Failed to apply AI inline edit: %1", sanitizedErrorDetail(result.message)));
         return;
     }
 
@@ -328,17 +331,30 @@ void InlineEditSession::onRequestFinished(quint64 requestId)
     const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
     InlineEditParserOptions options;
     options.maxNewTextChars = settings.inlineEditMaxNewTextChars;
-    options.allowDeletion = false;
+    options.maxTotalNewTextChars = settings.inlineEditMaxTotalNewTextChars;
+    options.maxEdits = settings.inlineEditMaxEdits;
+    options.allowDeletion = settings.inlineEditAllowDeletion;
     options.expectedRange = m_activeTargetRange;
 
-    InlineEditSuggestion parsed = InlineEditParser::parse(m_activeResponse, m_view ? m_view->document() : nullptr, options);
-    if (!parsed.valid || parsed.edits.size() != 1) {
+    KTextEditor::Document *document = m_view ? m_view->document() : nullptr;
+    InlineEditSuggestion parsed = InlineEditParser::parse(m_activeResponse, document, options);
+    const InlineEditValidationOptions validationOptions = inlineEditValidationOptionsFromSettings(settings, m_activeDocumentRevision);
+    const InlineEditValidationResult validation = InlineEditValidator::validate(document, parsed, validationOptions);
+    if (!validation.ok) {
+        m_activeResponse.clear();
+        m_activeTargetRange = KTextEditor::Range::invalid();
+        m_activeDocumentRevision = -1;
         clearPreview();
         showError(i18n("AI inline edit response did not contain a valid edit"));
         return;
     }
 
+    parsed.edits = validation.edits;
     parsed.source = QStringLiteral("manual");
+    m_previewDocumentRevision = m_activeDocumentRevision;
+    m_activeResponse.clear();
+    m_activeTargetRange = KTextEditor::Range::invalid();
+    m_activeDocumentRevision = -1;
     setPreview(parsed);
 }
 
@@ -349,6 +365,9 @@ void InlineEditSession::onRequestFailed(quint64 requestId, const QString &messag
     }
 
     m_activeRequestId = 0;
+    m_activeResponse.clear();
+    m_activeTargetRange = KTextEditor::Range::invalid();
+    m_activeDocumentRevision = -1;
     Q_EMIT requestStateChanged(false);
     clearPreview();
     showError(i18n("AI inline edit request failed: %1", sanitizedErrorDetail(message)));
@@ -419,6 +438,7 @@ void InlineEditSession::cancelActiveRequest()
 
     m_activeResponse.clear();
     m_activeTargetRange = KTextEditor::Range::invalid();
+    m_activeDocumentRevision = -1;
 
     if (requestId != 0 && m_provider) {
         m_provider->cancel(requestId);
@@ -428,6 +448,7 @@ void InlineEditSession::cancelActiveRequest()
 void InlineEditSession::clearPreview()
 {
     const bool wasActive = hasPreview();
+    m_previewDocumentRevision = -1;
     m_currentSuggestion = {};
     if (m_overlay) {
         m_overlay->clear();
@@ -442,6 +463,8 @@ void InlineEditSession::setPreview(const InlineEditSuggestion &suggestion)
     const bool wasActive = hasPreview();
     m_currentSuggestion = suggestion;
     if (m_overlay) {
+        const CompletionSettings settings = m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults();
+        m_overlay->setPreviewMaxLines(settings.inlineEditPreviewMaxLines);
         m_overlay->setSuggestion(suggestion);
     }
     if (wasActive != hasPreview()) {
