@@ -10,6 +10,7 @@
 #pragma once
 
 #include "inlineedit/InlineEdit.h"
+#include "inlineedit/InlineEditTrigger.h"
 
 namespace KateAiInlineCompletion
 {
@@ -23,6 +24,8 @@ struct InlineEditPromptOptions {
     bool useContext = true;
     int maxContextChars = 6000;
     int maxEdits = 4;
+    int maxTriggerPromptChars = 16000;
+    InlineEditTrigger trigger;
 };
 
 class InlineEditPromptBuilder final

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "inlineedit/InlineEdit.h"
+#include "inlineedit/InlineEditTrigger.h"
 
 #include <KTextEditor/Cursor>
 #include <KTextEditor/Range>
@@ -17,6 +18,7 @@
 #include <QObject>
 #include <QHash>
 #include <QPointer>
+#include <QTimer>
 #include <QUrl>
 
 #include <memory>
@@ -34,6 +36,7 @@ namespace KateAiInlineCompletion
 {
 
 class AbstractAIProvider;
+struct CompletionSettings;
 class CopilotAuthManager;
 class DiagnosticStore;
 class InlineEditPreviewOverlay;
@@ -56,6 +59,9 @@ public:
     ~InlineEditSession() override;
 
     void triggerInlineEdit();
+    void scheduleAutomaticInlineEdit();
+    void cancelPendingAutomaticInlineEdit();
+    void setGhostSuggestionVisible(bool visible);
     void acceptInlineEdit();
     void dismissInlineEdit();
 
@@ -75,13 +81,22 @@ private Q_SLOTS:
     void onDocumentTextChanged(KTextEditor::Document *document);
     void onFocusOut(KTextEditor::View *view);
     void onSelectionChanged(KTextEditor::View *view);
+    void onAutomaticTriggerTimeout();
 
 private:
     void ensureProvider(const QString &providerId);
     void cancelActiveRequest();
     void clearPreview();
     void setPreview(const InlineEditSuggestion &suggestion);
+    void startInlineEditRequest(const InlineEditTrigger &trigger, bool automatic);
+    void startAutomaticCooldown(const CompletionSettings &settings);
 
+    [[nodiscard]] InlineEditTriggerRequest buildTriggerRequest() const;
+    [[nodiscard]] KTextEditor::Range resolvedTargetRangeForTrigger(const InlineEditTrigger &trigger) const;
+    [[nodiscard]] KTextEditor::Range currentLineRange(int line) const;
+    [[nodiscard]] bool automaticTriggerGatesOpen(const CompletionSettings &settings) const;
+    [[nodiscard]] bool automaticCooldownActive() const;
+    [[nodiscard]] QString automaticTriggerKey(const InlineEditTrigger &trigger) const;
     [[nodiscard]] InlineEditRequestContext buildRequestContext(const KTextEditor::Range &targetRange) const;
     [[nodiscard]] KTextEditor::Range targetRangeForCurrentState() const;
     [[nodiscard]] QString documentDisplayPath(KTextEditor::Document *document) const;
@@ -103,6 +118,7 @@ private:
     DiagnosticStore *m_diagnosticStore = nullptr;
 
     QPointer<InlineEditPreviewOverlay> m_overlay;
+    QTimer m_automaticTriggerTimer;
     std::unique_ptr<AbstractAIProvider> m_provider;
     QString m_providerId;
 
@@ -111,8 +127,12 @@ private:
     KTextEditor::Range m_activeTargetRange = KTextEditor::Range::invalid();
     qint64 m_activeDocumentRevision = -1;
     qint64 m_previewDocumentRevision = -1;
+    qint64 m_automaticCooldownUntilMs = 0;
+    QString m_lastAutomaticTriggerKey;
     InlineEditSuggestion m_currentSuggestion;
+    bool m_activeRequestAutomatic = false;
     bool m_ignoreDocumentChange = false;
+    bool m_ghostSuggestionVisible = false;
 };
 
 } // namespace KateAiInlineCompletion

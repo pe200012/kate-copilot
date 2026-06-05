@@ -7,8 +7,12 @@
 
 #include "inlineedit/InlineEditPromptBuilder.h"
 
+#include "security/SensitiveDataRedactor.h"
+
 #include <QStringList>
 #include <QtGlobal>
+
+#include <utility>
 
 namespace KateAiInlineCompletion
 {
@@ -84,6 +88,65 @@ namespace
 {
     return QStringLiteral("%1: %2").arg(name, QString::number(value));
 }
+
+[[nodiscard]] QString boundedRedacted(QString text, int maxChars)
+{
+    text = redactSensitiveData(std::move(text)).trimmed();
+    if (maxChars <= 0) {
+        return {};
+    }
+    if (text.size() > maxChars) {
+        text.truncate(maxChars);
+    }
+    return text;
+}
+
+[[nodiscard]] QString triggerDetailText(const InlineEditRequestContext &context, const InlineEditPromptOptions &options)
+{
+    const InlineEditTrigger &trigger = options.trigger;
+    switch (trigger.kind) {
+    case InlineEditTriggerKind::DiagnosticRepair:
+        return boundedRedacted(trigger.diagnosticMessage.isEmpty() ? trigger.reason : trigger.diagnosticMessage, options.maxTriggerPromptChars);
+    case InlineEditTriggerKind::RecentEditContinuation:
+        return boundedRedacted(trigger.recentEditSummary.isEmpty() ? trigger.reason : trigger.recentEditSummary, options.maxTriggerPromptChars);
+    case InlineEditTriggerKind::SelectionRepair:
+        return boundedRedacted(context.selectedText.isEmpty() ? trigger.reason : context.selectedText, options.maxTriggerPromptChars);
+    case InlineEditTriggerKind::Manual:
+        return boundedRedacted(trigger.reason, options.maxTriggerPromptChars);
+    }
+    return {};
+}
+
+void appendTriggerSection(QStringList &lines, const InlineEditRequestContext &context, const InlineEditPromptOptions &options)
+{
+    const InlineEditTrigger &trigger = options.trigger;
+    if (trigger.kind == InlineEditTriggerKind::Manual && trigger.reason.trimmed().isEmpty()) {
+        return;
+    }
+
+    lines << QString();
+    lines << QStringLiteral("Trigger reason: %1").arg(inlineEditTriggerKindName(trigger.kind));
+
+    switch (trigger.kind) {
+    case InlineEditTriggerKind::DiagnosticRepair:
+        lines << QStringLiteral("Diagnostic:");
+        break;
+    case InlineEditTriggerKind::RecentEditContinuation:
+        lines << QStringLiteral("Recent edit pattern:");
+        break;
+    case InlineEditTriggerKind::SelectionRepair:
+        lines << QStringLiteral("Selected code:");
+        break;
+    case InlineEditTriggerKind::Manual:
+        lines << QStringLiteral("Manual request:");
+        break;
+    }
+
+    const QString detail = triggerDetailText(context, options);
+    if (!detail.isEmpty()) {
+        lines << detail;
+    }
+}
 } // namespace
 
 InlineEditPrompt InlineEditPromptBuilder::build(const InlineEditRequestContext &context, const InlineEditPromptOptions &options)
@@ -114,6 +177,7 @@ InlineEditPrompt InlineEditPromptBuilder::build(const InlineEditRequestContext &
     lines << QString();
     lines << QStringLiteral("Relevant context:");
     lines << renderContextItems(context.contextItems, options);
+    appendTriggerSection(lines, context, options);
     lines << QString();
     lines << QStringLiteral("Return 1 to %1 non-overlapping edits inside the target range above.").arg(qMax(1, options.maxEdits));
     lines << QStringLiteral("Use the smallest edit set that solves the request; prefer one edit for local changes.");

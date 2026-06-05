@@ -9,6 +9,9 @@
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "settings/CompletionSettings.h"
 
+#include "context/DiagnosticStore.h"
+#include "context/RecentEditsTracker.h"
+
 #include <KTextEditor/Document>
 #include <KTextEditor/Editor>
 #include <KTextEditor/View>
@@ -20,6 +23,7 @@
 #include <QNetworkAccessManager>
 #include <QPushButton>
 #include <QPointer>
+#include <QUrl>
 #include <QScopedPointer>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -30,7 +34,10 @@
 #include <QVBoxLayout>
 
 using KateAiInlineCompletion::CompletionSettings;
+using KateAiInlineCompletion::DiagnosticItem;
+using KateAiInlineCompletion::DiagnosticStore;
 using KateAiInlineCompletion::InlineEditSession;
+using KateAiInlineCompletion::RecentEditsTracker;
 
 namespace
 {
@@ -155,6 +162,8 @@ struct Harness {
     KTextEditor::View *view = nullptr;
     KateAiInlineCompletionPlugin plugin;
     QNetworkAccessManager manager;
+    DiagnosticStore diagnosticStore;
+    RecentEditsTracker recentEditsTracker;
     InlineEditSession *session = nullptr;
 
     explicit Harness(const QUrl &endpoint)
@@ -169,6 +178,7 @@ struct Harness {
         QVERIFY2(editor, "KTextEditor editor instance is unavailable");
         doc.reset(editor->createDocument(&window));
         QVERIFY2(doc, "Failed to create KTextEditor document");
+        doc->setProperty("_kate_ai_inline_edit_stable_untitled_document_id", QStringLiteral("/repo/src/foo.cpp"));
         doc->setText(QStringLiteral("int main() {\n    return oldValue;\n}\n"));
 
         view = doc->createView(&window);
@@ -186,12 +196,40 @@ struct Harness {
         settings.inlineEditUseContext = false;
         plugin.setSettings(settings);
 
-        session = new InlineEditSession(view, &plugin, nullptr, &manager, nullptr, nullptr, nullptr, view);
+        session = new InlineEditSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, view);
         window.show();
         QTest::qWait(120);
         qApp->processEvents();
     }
 };
+
+void enableAutomaticDiagnostics(Harness &harness, int debounceMs = 100, int cooldownMs = 5000)
+{
+    CompletionSettings settings = harness.plugin.settings().validated();
+    settings.enableInlineEdits = true;
+    settings.enableAutomaticInlineEdits = true;
+    settings.autoInlineEditDebounceMs = debounceMs;
+    settings.autoInlineEditCooldownMs = cooldownMs;
+    settings.autoInlineEditDiagnostics = true;
+    settings.autoInlineEditRecentEdits = false;
+    settings.enableDiagnosticsContext = true;
+    settings.autoInlineEditDiagnosticLineDistance = 5;
+    harness.plugin.setSettings(settings);
+}
+
+void addErrorDiagnostic(Harness &harness)
+{
+    DiagnosticItem item;
+    item.uri = QStringLiteral("/repo/src/foo.cpp");
+    item.severity = DiagnosticItem::Severity::Error;
+    item.startLine = 1;
+    item.startColumn = 11;
+    item.endLine = 1;
+    item.endColumn = 19;
+    item.message = QStringLiteral("oldValue is undefined");
+    item.timestamp = QDateTime::currentDateTimeUtc();
+    harness.diagnosticStore.setDiagnostics(item.uri, {item});
+}
 } // namespace
 
 class InlineEditSessionTest : public QObject
@@ -209,6 +247,13 @@ private Q_SLOTS:
     void dismissClearsPreview();
     void cursorMoveClearsPreview();
     void documentChangeClearsPreview();
+    void automaticDiagnosticTriggerCreatesRequest();
+    void automaticDiagnosticTriggerRejectsOutOfBoundsDiagnosticRange();
+    void cooldownPreventsRepeatedAutomaticTrigger();
+    void documentChangeCancelsPendingAutomaticTrigger();
+    void cursorMoveCancelsPendingAutomaticTrigger();
+    void visibleGhostCompletionBlocksAutomaticInlineEdit();
+    void manualTriggerBypassesAutomaticCooldown();
 };
 
 void InlineEditSessionTest::triggerCreatesRequestForSelectedRange()
@@ -385,6 +430,145 @@ void InlineEditSessionTest::documentChangeClearsPreview()
 
     harness.doc->insertText(KTextEditor::Cursor(0, 0), QStringLiteral("// edit\n"));
     QTRY_VERIFY_WITH_TIMEOUT(!harness.session->hasPreview(), 2000);
+}
+
+void InlineEditSessionTest::automaticDiagnosticTriggerCreatesRequest()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness);
+    addErrorDiagnostic(harness);
+
+    harness.session->scheduleAutomaticInlineEdit();
+
+    QTRY_COMPARE_WITH_TIMEOUT(server.requestCount(), 1, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasPreview(), 2000);
+    const QJsonDocument body = QJsonDocument::fromJson(server.lastRequestBody());
+    const QJsonArray messages = body.object().value(QStringLiteral("messages")).toArray();
+    const QString userPrompt = messages.at(messages.size() - 1).toObject().value(QStringLiteral("content")).toString();
+    QVERIFY(userPrompt.contains(QStringLiteral("Trigger reason: DiagnosticRepair")));
+    QVERIFY(userPrompt.contains(QStringLiteral("oldValue is undefined")));
+}
+
+void InlineEditSessionTest::automaticDiagnosticTriggerRejectsOutOfBoundsDiagnosticRange()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":1,"endLine":2,"endColumn":2,"newText":"x"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 100, 0);
+
+    DiagnosticItem item;
+    item.uri = QStringLiteral("/repo/src/foo.cpp");
+    item.severity = DiagnosticItem::Severity::Error;
+    item.startLine = 1;
+    item.startColumn = 0;
+    item.endLine = 1;
+    item.endColumn = 999;
+    item.message = QStringLiteral("stale diagnostic range");
+    item.timestamp = QDateTime::currentDateTimeUtc();
+    harness.diagnosticStore.setDiagnostics(item.uri, {item});
+
+    harness.session->scheduleAutomaticInlineEdit();
+    QTest::qWait(250);
+
+    QCOMPARE(server.requestCount(), 0);
+}
+
+void InlineEditSessionTest::cooldownPreventsRepeatedAutomaticTrigger()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 100, 5000);
+    addErrorDiagnostic(harness);
+
+    harness.session->scheduleAutomaticInlineEdit();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasPreview(), 2000);
+    harness.session->dismissInlineEdit();
+    harness.session->scheduleAutomaticInlineEdit();
+    QTest::qWait(250);
+
+    QCOMPARE(server.requestCount(), 1);
+}
+
+void InlineEditSessionTest::documentChangeCancelsPendingAutomaticTrigger()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 500, 0);
+    addErrorDiagnostic(harness);
+
+    harness.session->scheduleAutomaticInlineEdit();
+    QTest::qWait(50);
+    harness.doc->insertText(KTextEditor::Cursor(0, 0), QStringLiteral("// edit\n"));
+    QTest::qWait(470);
+
+    QCOMPARE(server.requestCount(), 0);
+}
+
+void InlineEditSessionTest::cursorMoveCancelsPendingAutomaticTrigger()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 500, 0);
+    addErrorDiagnostic(harness);
+
+    harness.session->scheduleAutomaticInlineEdit();
+    QTest::qWait(50);
+    harness.view->setCursorPosition(KTextEditor::Cursor(2, 0));
+    QTest::qWait(470);
+
+    QCOMPARE(server.requestCount(), 0);
+}
+
+void InlineEditSessionTest::visibleGhostCompletionBlocksAutomaticInlineEdit()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 100, 0);
+    addErrorDiagnostic(harness);
+
+    harness.session->setGhostSuggestionVisible(true);
+    harness.session->scheduleAutomaticInlineEdit();
+    QTest::qWait(250);
+
+    QCOMPARE(server.requestCount(), 0);
+}
+
+void InlineEditSessionTest::manualTriggerBypassesAutomaticCooldown()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.setInlineEditJson(QStringLiteral(R"({"edits":[{"startLine":2,"startColumn":12,"endLine":2,"endColumn":20,"newText":"newValue"}]})"));
+
+    Harness harness(server.endpoint());
+    enableAutomaticDiagnostics(harness, 100, 5000);
+    addErrorDiagnostic(harness);
+
+    harness.session->scheduleAutomaticInlineEdit();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasPreview(), 2000);
+    harness.session->dismissInlineEdit();
+
+    harness.view->setSelection(KTextEditor::Range(1, 11, 1, 19));
+    harness.session->triggerInlineEdit();
+
+    QTRY_COMPARE_WITH_TIMEOUT(server.requestCount(), 2, 2000);
 }
 
 QTEST_MAIN(InlineEditSessionTest)

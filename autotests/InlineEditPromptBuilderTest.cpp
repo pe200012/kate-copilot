@@ -8,6 +8,7 @@
 #include "inlineedit/InlineEditPromptBuilder.h"
 
 #include "context/ContextItem.h"
+#include "inlineedit/InlineEditTrigger.h"
 
 #include <QtTest>
 
@@ -15,9 +16,21 @@ using KateAiInlineCompletion::ContextItem;
 using KateAiInlineCompletion::InlineEditPromptBuilder;
 using KateAiInlineCompletion::InlineEditPromptOptions;
 using KateAiInlineCompletion::InlineEditRequestContext;
+using KateAiInlineCompletion::InlineEditTrigger;
+using KateAiInlineCompletion::InlineEditTriggerKind;
 
 namespace
 {
+InlineEditTrigger trigger(InlineEditTriggerKind kind, QString reason)
+{
+    InlineEditTrigger out;
+    out.kind = kind;
+    out.reason = std::move(reason);
+    out.diagnosticMessage = QStringLiteral("expected ';'");
+    out.recentEditSummary = QStringLiteral("Renamed oldName to newName");
+    return out;
+}
+
 InlineEditRequestContext baseContext()
 {
     InlineEditRequestContext ctx;
@@ -51,6 +64,9 @@ private Q_SLOTS:
     void includesContextItemsWhenEnabled();
     void omitsContextItemsWhenDisabled();
     void includesConfiguredMaxEditCount();
+    void includesDiagnosticTriggerReason();
+    void includesRecentEditTriggerReason();
+    void includesSelectionTriggerReason();
     void outputIsDeterministic();
 };
 
@@ -123,6 +139,42 @@ void InlineEditPromptBuilderTest::includesConfiguredMaxEditCount()
     const auto prompt = InlineEditPromptBuilder::build(baseContext(), options);
 
     QVERIFY(prompt.userPrompt.contains(QStringLiteral("Return 1 to 7 non-overlapping edits inside the target range above.")));
+}
+
+void InlineEditPromptBuilderTest::includesDiagnosticTriggerReason()
+{
+    InlineEditPromptOptions options;
+    options.trigger = trigger(InlineEditTriggerKind::DiagnosticRepair, QStringLiteral("Fix the diagnostic near the cursor:\nexpected ';'"));
+
+    const auto prompt = InlineEditPromptBuilder::build(baseContext(), options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Trigger reason: DiagnosticRepair")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Diagnostic:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("expected ';'")));
+}
+
+void InlineEditPromptBuilderTest::includesRecentEditTriggerReason()
+{
+    InlineEditPromptOptions options;
+    options.trigger = trigger(InlineEditTriggerKind::RecentEditContinuation, QStringLiteral("Continue the recent edit pattern:\nRenamed oldName to newName"));
+
+    const auto prompt = InlineEditPromptBuilder::build(baseContext(), options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Trigger reason: RecentEditContinuation")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Recent edit pattern:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Renamed oldName to newName")));
+}
+
+void InlineEditPromptBuilderTest::includesSelectionTriggerReason()
+{
+    InlineEditPromptOptions options;
+    options.trigger = trigger(InlineEditTriggerKind::SelectionRepair, QStringLiteral("Improve or repair the selected code."));
+
+    const auto prompt = InlineEditPromptBuilder::build(baseContext(), options);
+
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Trigger reason: SelectionRepair")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("Selected code:")));
+    QVERIFY(prompt.userPrompt.contains(QStringLiteral("int value = oldName();")));
 }
 
 void InlineEditPromptBuilderTest::outputIsDeterministic()

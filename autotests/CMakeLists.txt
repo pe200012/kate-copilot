@@ -130,8 +130,23 @@ target_include_directories(kateaiinlinecompletion_inline_edit_applier_test
         ${CMAKE_SOURCE_DIR}/src
 )
 
+ecm_add_test(InlineEditTriggerEngineTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTrigger.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTriggerEngine.cpp
+    TEST_NAME kateaiinlinecompletion_inline_edit_trigger_engine_test
+    LINK_LIBRARIES
+        kateaiinlinecompletion_settings
+        Qt6::Test
+        KF6::TextEditor
+)
+target_include_directories(kateaiinlinecompletion_inline_edit_trigger_engine_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 ecm_add_test(InlineEditPromptBuilderTest.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTrigger.cpp
     TEST_NAME kateaiinlinecompletion_inline_edit_prompt_builder_test
     LINK_LIBRARIES
         kateaiinlinecompletion_context
@@ -157,6 +172,8 @@ ecm_add_test(InlineEditSessionTest.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTrigger.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTriggerEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/render/GhostTextInlineNoteProvider.cpp
@@ -350,6 +367,8 @@ ecm_add_test(EditorSessionIntegrationTest.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTrigger.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTriggerEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp
@@ -409,6 +428,8 @@ ecm_add_test(KateAiConfigPageTest.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditApplier.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditParser.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditPromptBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTrigger.cpp
+    ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditTriggerEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditSession.cpp
     ${CMAKE_SOURCE_DIR}/src/inlineedit/InlineEditValidator.cpp
     ${CMAKE_SOURCE_DIR}/src/context/ContextProviderRegistry.cpp

@@ -90,6 +90,16 @@ struct CompletionSettings {
     static constexpr int kInlineEditMaxTotalNewTextCharsMax = 100000;
     static constexpr int kInlineEditPreviewMaxLinesMin = 1;
     static constexpr int kInlineEditPreviewMaxLinesMax = 50;
+    static constexpr int kAutoInlineEditDebounceMinMs = 100;
+    static constexpr int kAutoInlineEditDebounceMaxMs = 5000;
+    static constexpr int kAutoInlineEditCooldownMinMs = 0;
+    static constexpr int kAutoInlineEditCooldownMaxMs = 60000;
+    static constexpr int kAutoInlineEditDiagnosticLineDistanceMin = 0;
+    static constexpr int kAutoInlineEditDiagnosticLineDistanceMax = 100;
+    static constexpr int kAutoInlineEditRecentEditWindowMinMs = 1000;
+    static constexpr int kAutoInlineEditRecentEditWindowMaxMs = 3600000;
+    static constexpr int kAutoInlineEditMaxPromptCharsMin = 1000;
+    static constexpr int kAutoInlineEditMaxPromptCharsMax = 100000;
     static constexpr int kInlineEditExcerptCharsMin = 0;
     static constexpr int kInlineEditExcerptCharsMax = 20000;
 
@@ -172,6 +182,16 @@ struct CompletionSettings {
     int inlineEditMaxSuffixChars = 3000;
     bool inlineEditAllowDeletion = true;
     int inlineEditPreviewMaxLines = 8;
+    bool enableAutomaticInlineEdits = false;
+    int autoInlineEditDebounceMs = 700;
+    int autoInlineEditCooldownMs = 5000;
+    bool autoInlineEditDiagnostics = true;
+    bool autoInlineEditWarnings = false;
+    bool autoInlineEditRecentEdits = true;
+    bool autoInlineEditSelections = false;
+    int autoInlineEditDiagnosticLineDistance = 5;
+    int autoInlineEditRecentEditWindowMs = 300000;
+    int autoInlineEditMaxPromptChars = 16000;
     bool inlineEditUseContext = true;
     bool inlineEditCopilotExperimental = false;
 

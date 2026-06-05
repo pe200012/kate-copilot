@@ -149,6 +149,21 @@ CompletionSettings CompletionSettings::validated() const
     out.inlineEditPreviewMaxLines = qBound(kInlineEditPreviewMaxLinesMin,
                                            out.inlineEditPreviewMaxLines,
                                            kInlineEditPreviewMaxLinesMax);
+    out.autoInlineEditDebounceMs = qBound(kAutoInlineEditDebounceMinMs,
+                                          out.autoInlineEditDebounceMs,
+                                          kAutoInlineEditDebounceMaxMs);
+    out.autoInlineEditCooldownMs = qBound(kAutoInlineEditCooldownMinMs,
+                                          out.autoInlineEditCooldownMs,
+                                          kAutoInlineEditCooldownMaxMs);
+    out.autoInlineEditDiagnosticLineDistance = qBound(kAutoInlineEditDiagnosticLineDistanceMin,
+                                                      out.autoInlineEditDiagnosticLineDistance,
+                                                      kAutoInlineEditDiagnosticLineDistanceMax);
+    out.autoInlineEditRecentEditWindowMs = qBound(kAutoInlineEditRecentEditWindowMinMs,
+                                                  out.autoInlineEditRecentEditWindowMs,
+                                                  kAutoInlineEditRecentEditWindowMaxMs);
+    out.autoInlineEditMaxPromptChars = qBound(kAutoInlineEditMaxPromptCharsMin,
+                                              out.autoInlineEditMaxPromptChars,
+                                              kAutoInlineEditMaxPromptCharsMax);
     out.inlineEditMaxPrefixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxPrefixChars, kInlineEditExcerptCharsMax);
     out.inlineEditMaxSuffixChars = qBound(kInlineEditExcerptCharsMin, out.inlineEditMaxSuffixChars, kInlineEditExcerptCharsMax);
     out.contextExcludePatterns = normalizedPatterns(out.contextExcludePatterns);
@@ -252,6 +267,16 @@ CompletionSettings CompletionSettings::load(const KConfigGroup &group)
     out.inlineEditMaxSuffixChars = group.readEntry("InlineEditMaxSuffixChars", d.inlineEditMaxSuffixChars);
     out.inlineEditAllowDeletion = group.readEntry("InlineEditAllowDeletion", d.inlineEditAllowDeletion);
     out.inlineEditPreviewMaxLines = group.readEntry("InlineEditPreviewMaxLines", d.inlineEditPreviewMaxLines);
+    out.enableAutomaticInlineEdits = group.readEntry("EnableAutomaticInlineEdits", d.enableAutomaticInlineEdits);
+    out.autoInlineEditDebounceMs = group.readEntry("AutoInlineEditDebounceMs", d.autoInlineEditDebounceMs);
+    out.autoInlineEditCooldownMs = group.readEntry("AutoInlineEditCooldownMs", d.autoInlineEditCooldownMs);
+    out.autoInlineEditDiagnostics = group.readEntry("AutoInlineEditDiagnostics", d.autoInlineEditDiagnostics);
+    out.autoInlineEditWarnings = group.readEntry("AutoInlineEditWarnings", d.autoInlineEditWarnings);
+    out.autoInlineEditRecentEdits = group.readEntry("AutoInlineEditRecentEdits", d.autoInlineEditRecentEdits);
+    out.autoInlineEditSelections = group.readEntry("AutoInlineEditSelections", d.autoInlineEditSelections);
+    out.autoInlineEditDiagnosticLineDistance = group.readEntry("AutoInlineEditDiagnosticLineDistance", d.autoInlineEditDiagnosticLineDistance);
+    out.autoInlineEditRecentEditWindowMs = group.readEntry("AutoInlineEditRecentEditWindowMs", d.autoInlineEditRecentEditWindowMs);
+    out.autoInlineEditMaxPromptChars = group.readEntry("AutoInlineEditMaxPromptChars", d.autoInlineEditMaxPromptChars);
     out.inlineEditUseContext = group.readEntry("InlineEditUseContext", d.inlineEditUseContext);
     out.inlineEditCopilotExperimental = group.readEntry("InlineEditCopilotExperimental", d.inlineEditCopilotExperimental);
 
@@ -328,6 +353,16 @@ void CompletionSettings::save(KConfigGroup &group) const
     group.writeEntry("InlineEditMaxSuffixChars", v.inlineEditMaxSuffixChars);
     group.writeEntry("InlineEditAllowDeletion", v.inlineEditAllowDeletion);
     group.writeEntry("InlineEditPreviewMaxLines", v.inlineEditPreviewMaxLines);
+    group.writeEntry("EnableAutomaticInlineEdits", v.enableAutomaticInlineEdits);
+    group.writeEntry("AutoInlineEditDebounceMs", v.autoInlineEditDebounceMs);
+    group.writeEntry("AutoInlineEditCooldownMs", v.autoInlineEditCooldownMs);
+    group.writeEntry("AutoInlineEditDiagnostics", v.autoInlineEditDiagnostics);
+    group.writeEntry("AutoInlineEditWarnings", v.autoInlineEditWarnings);
+    group.writeEntry("AutoInlineEditRecentEdits", v.autoInlineEditRecentEdits);
+    group.writeEntry("AutoInlineEditSelections", v.autoInlineEditSelections);
+    group.writeEntry("AutoInlineEditDiagnosticLineDistance", v.autoInlineEditDiagnosticLineDistance);
+    group.writeEntry("AutoInlineEditRecentEditWindowMs", v.autoInlineEditRecentEditWindowMs);
+    group.writeEntry("AutoInlineEditMaxPromptChars", v.autoInlineEditMaxPromptChars);
     group.writeEntry("InlineEditUseContext", v.inlineEditUseContext);
     group.writeEntry("InlineEditCopilotExperimental", v.inlineEditCopilotExperimental);
 

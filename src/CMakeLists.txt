@@ -163,6 +163,10 @@ kcoreaddons_add_plugin(kateaiinlinecompletion
         session/SuggestionPostProcessor.h
 
         inlineedit/InlineEdit.h
+        inlineedit/InlineEditTrigger.cpp
+        inlineedit/InlineEditTrigger.h
+        inlineedit/InlineEditTriggerEngine.cpp
+        inlineedit/InlineEditTriggerEngine.h
         inlineedit/InlineEditApplier.cpp
         inlineedit/InlineEditApplier.h
         inlineedit/InlineEditParser.cpp

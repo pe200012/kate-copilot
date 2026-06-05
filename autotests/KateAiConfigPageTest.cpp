@@ -72,6 +72,14 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     auto *inlineEditMaxTotalNewText = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxTotalNewTextCharsSpinBox"));
     auto *inlineEditAllowDeletion = page.findChild<QCheckBox *>(QStringLiteral("inlineEditAllowDeletionCheckBox"));
     auto *inlineEditPreviewMaxLines = page.findChild<QSpinBox *>(QStringLiteral("inlineEditPreviewMaxLinesSpinBox"));
+    auto *automaticInlineEdits = page.findChild<QCheckBox *>(QStringLiteral("automaticInlineEditsCheckBox"));
+    auto *autoInlineEditDiagnostics = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditDiagnosticsCheckBox"));
+    auto *autoInlineEditWarnings = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditWarningsCheckBox"));
+    auto *autoInlineEditRecentEdits = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditRecentEditsCheckBox"));
+    auto *autoInlineEditSelections = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditSelectionsCheckBox"));
+    auto *autoInlineEditDebounce = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditDebounceSpinBox"));
+    auto *autoInlineEditCooldown = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditCooldownSpinBox"));
+    auto *autoInlineEditDiagnosticLineDistance = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditDiagnosticLineDistanceSpinBox"));
 
     QVERIFY(providerHint);
     QVERIFY(shortcutHint);
@@ -98,6 +106,14 @@ void KateAiConfigPageTest::showsProviderRecommendationShortcutHintAndContextCont
     QVERIFY(inlineEditMaxTotalNewText);
     QVERIFY(inlineEditAllowDeletion);
     QVERIFY(inlineEditPreviewMaxLines);
+    QVERIFY(automaticInlineEdits);
+    QVERIFY(autoInlineEditDiagnostics);
+    QVERIFY(autoInlineEditWarnings);
+    QVERIFY(autoInlineEditRecentEdits);
+    QVERIFY(autoInlineEditSelections);
+    QVERIFY(autoInlineEditDebounce);
+    QVERIFY(autoInlineEditCooldown);
+    QVERIFY(autoInlineEditDiagnosticLineDistance);
 
     QVERIFY(providerHint->text().contains(QStringLiteral("qwen3-coder-q4:latest")));
     QVERIFY(shortcutHint->text().contains(QStringLiteral("Tab")));
@@ -344,6 +360,14 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
     auto *maxSuffix = page.findChild<QSpinBox *>(QStringLiteral("inlineEditMaxSuffixCharsSpinBox"));
     auto *allowDeletion = page.findChild<QCheckBox *>(QStringLiteral("inlineEditAllowDeletionCheckBox"));
     auto *previewMaxLines = page.findChild<QSpinBox *>(QStringLiteral("inlineEditPreviewMaxLinesSpinBox"));
+    auto *automaticInlineEdits = page.findChild<QCheckBox *>(QStringLiteral("automaticInlineEditsCheckBox"));
+    auto *autoDiagnostics = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditDiagnosticsCheckBox"));
+    auto *autoWarnings = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditWarningsCheckBox"));
+    auto *autoRecentEdits = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditRecentEditsCheckBox"));
+    auto *autoSelections = page.findChild<QCheckBox *>(QStringLiteral("autoInlineEditSelectionsCheckBox"));
+    auto *autoDebounce = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditDebounceSpinBox"));
+    auto *autoCooldown = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditCooldownSpinBox"));
+    auto *autoDiagnosticDistance = page.findChild<QSpinBox *>(QStringLiteral("autoInlineEditDiagnosticLineDistanceSpinBox"));
     auto *useContext = page.findChild<QCheckBox *>(QStringLiteral("inlineEditUseContextCheckBox"));
     auto *copilotExperimental = page.findChild<QCheckBox *>(QStringLiteral("inlineEditCopilotExperimentalCheckBox"));
 
@@ -355,6 +379,14 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
     QVERIFY(maxSuffix);
     QVERIFY(allowDeletion);
     QVERIFY(previewMaxLines);
+    QVERIFY(automaticInlineEdits);
+    QVERIFY(autoDiagnostics);
+    QVERIFY(autoWarnings);
+    QVERIFY(autoRecentEdits);
+    QVERIFY(autoSelections);
+    QVERIFY(autoDebounce);
+    QVERIFY(autoCooldown);
+    QVERIFY(autoDiagnosticDistance);
     QVERIFY(useContext);
     QVERIFY(copilotExperimental);
 
@@ -366,6 +398,14 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
     maxSuffix->setValue(1234);
     allowDeletion->setChecked(false);
     previewMaxLines->setValue(9);
+    automaticInlineEdits->setChecked(true);
+    autoDiagnostics->setChecked(false);
+    autoWarnings->setChecked(true);
+    autoRecentEdits->setChecked(false);
+    autoSelections->setChecked(true);
+    autoDebounce->setValue(800);
+    autoCooldown->setValue(3000);
+    autoDiagnosticDistance->setValue(12);
     useContext->setChecked(false);
     copilotExperimental->setChecked(true);
 
@@ -376,7 +416,35 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
     QVERIFY(!maxSuffix->isEnabled());
     QVERIFY(!allowDeletion->isEnabled());
     QVERIFY(!previewMaxLines->isEnabled());
+    QVERIFY(!automaticInlineEdits->isEnabled());
+    QVERIFY(!autoDiagnostics->isEnabled());
+    QVERIFY(!autoWarnings->isEnabled());
+    QVERIFY(!autoRecentEdits->isEnabled());
+    QVERIFY(!autoSelections->isEnabled());
+    QVERIFY(!autoDebounce->isEnabled());
+    QVERIFY(!autoCooldown->isEnabled());
+    QVERIFY(!autoDiagnosticDistance->isEnabled());
 
+    inlineEdits->setChecked(true);
+    automaticInlineEdits->setChecked(false);
+    QVERIFY(!autoDiagnostics->isEnabled());
+    QVERIFY(!autoWarnings->isEnabled());
+    QVERIFY(!autoRecentEdits->isEnabled());
+    QVERIFY(!autoSelections->isEnabled());
+    QVERIFY(!autoDebounce->isEnabled());
+    QVERIFY(!autoCooldown->isEnabled());
+    QVERIFY(!autoDiagnosticDistance->isEnabled());
+
+    automaticInlineEdits->setChecked(true);
+    QVERIFY(autoDiagnostics->isEnabled());
+    QVERIFY(autoWarnings->isEnabled());
+    QVERIFY(autoRecentEdits->isEnabled());
+    QVERIFY(autoSelections->isEnabled());
+    QVERIFY(autoDebounce->isEnabled());
+    QVERIFY(autoCooldown->isEnabled());
+    QVERIFY(autoDiagnosticDistance->isEnabled());
+
+    inlineEdits->setChecked(false);
     page.apply();
 
     const KateAiInlineCompletion::CompletionSettings out = plugin.settings().validated();
@@ -388,6 +456,14 @@ void KateAiConfigPageTest::inlineEditSettingsApplyFromUi()
     QCOMPARE(out.inlineEditMaxSuffixChars, 1234);
     QCOMPARE(out.inlineEditAllowDeletion, false);
     QCOMPARE(out.inlineEditPreviewMaxLines, 9);
+    QCOMPARE(out.enableAutomaticInlineEdits, true);
+    QCOMPARE(out.autoInlineEditDiagnostics, false);
+    QCOMPARE(out.autoInlineEditWarnings, true);
+    QCOMPARE(out.autoInlineEditRecentEdits, false);
+    QCOMPARE(out.autoInlineEditSelections, true);
+    QCOMPARE(out.autoInlineEditDebounceMs, 800);
+    QCOMPARE(out.autoInlineEditCooldownMs, 3000);
+    QCOMPARE(out.autoInlineEditDiagnosticLineDistance, 12);
     QCOMPARE(out.inlineEditUseContext, false);
     QCOMPARE(out.inlineEditCopilotExperimental, true);
 }

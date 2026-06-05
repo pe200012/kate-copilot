@@ -148,6 +148,14 @@ private:
     QSpinBox *m_inlineEditMaxSuffixChars = nullptr;
     QCheckBox *m_inlineEditAllowDeletion = nullptr;
     QSpinBox *m_inlineEditPreviewMaxLines = nullptr;
+    QCheckBox *m_enableAutomaticInlineEdits = nullptr;
+    QCheckBox *m_autoInlineEditDiagnostics = nullptr;
+    QCheckBox *m_autoInlineEditWarnings = nullptr;
+    QCheckBox *m_autoInlineEditRecentEdits = nullptr;
+    QCheckBox *m_autoInlineEditSelections = nullptr;
+    QSpinBox *m_autoInlineEditDebounceMs = nullptr;
+    QSpinBox *m_autoInlineEditCooldownMs = nullptr;
+    QSpinBox *m_autoInlineEditDiagnosticLineDistance = nullptr;
     QCheckBox *m_inlineEditUseContext = nullptr;
     QCheckBox *m_inlineEditCopilotExperimental = nullptr;
 

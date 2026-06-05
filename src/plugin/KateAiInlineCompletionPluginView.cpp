@@ -273,6 +273,9 @@ void KateAiInlineCompletionPluginView::setupActions()
     m_triggerAction->setText(i18n("Trigger AI Inline Suggestion"));
     actionCollection()->setDefaultShortcut(m_triggerAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_Space));
     connect(m_triggerAction, &QAction::triggered, this, [this] {
+        if (auto *inlineEdit = activeInlineEditSession()) {
+            inlineEdit->cancelPendingAutomaticInlineEdit();
+        }
         if (auto *session = activeSession()) {
             session->triggerSuggestion();
         }
@@ -300,6 +303,9 @@ void KateAiInlineCompletionPluginView::setupActions()
     m_inlineEditTriggerAction->setText(i18n("Trigger AI Inline Edit"));
     actionCollection()->setDefaultShortcut(m_inlineEditTriggerAction, QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_E));
     connect(m_inlineEditTriggerAction, &QAction::triggered, this, [this] {
+        if (auto *session = activeSession(); session && session->hasVisibleSuggestion()) {
+            session->dismissSuggestion();
+        }
         if (auto *session = activeInlineEditSession()) {
             session->triggerInlineEdit();
         }
@@ -360,7 +366,8 @@ void KateAiInlineCompletionPluginView::ensureSession(KTextEditor::View *view)
                                                                             view);
     m_inlineEditSessions.insert(view, inlineEditSession);
 
-    connect(session, &KateAiInlineCompletion::EditorSession::suggestionVisibilityChanged, this, [this] {
+    connect(session, &KateAiInlineCompletion::EditorSession::suggestionVisibilityChanged, this, [this, session, inlineEditSession] {
+        inlineEditSession->setGhostSuggestionVisible(session->hasVisibleSuggestion());
         updateActionState();
     });
 

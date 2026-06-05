@@ -16,10 +16,12 @@
 #include "context/OpenTabsContextProvider.h"
 #include "context/ProjectTraitsContextProvider.h"
 #include "context/RecentEditsContextProvider.h"
+#include "context/RecentEditsTracker.h"
 #include "context/RelatedFilesContextProvider.h"
 #include "inlineedit/InlineEditApplier.h"
 #include "inlineedit/InlineEditParser.h"
 #include "inlineedit/InlineEditPromptBuilder.h"
+#include "inlineedit/InlineEditTriggerEngine.h"
 #include "inlineedit/InlineEditValidator.h"
 #include "network/AbstractAIProvider.h"
 #include "network/CopilotCodexProvider.h"
@@ -36,6 +38,7 @@
 #include <KTextEditor/MainWindow>
 #include <KTextEditor/View>
 
+#include <QDateTime>
 #include <QNetworkAccessManager>
 #include <QScopedValueRollback>
 #include <QUuid>
@@ -45,6 +48,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace KateAiInlineCompletion
@@ -115,6 +119,21 @@ namespace
     return static_cast<int>(qMin<qsizetype>(value, std::numeric_limits<int>::max()));
 }
 
+[[nodiscard]] bool cursorInDocument(KTextEditor::Document *document, const KTextEditor::Cursor &cursor)
+{
+    if (!document || !cursor.isValid() || cursor.line() < 0 || cursor.line() >= document->lines()) {
+        return false;
+    }
+
+    const int lineLength = boundedSize(document->line(cursor.line()).size());
+    return cursor.column() >= 0 && cursor.column() <= lineLength;
+}
+
+[[nodiscard]] bool rangeInDocument(KTextEditor::Document *document, const KTextEditor::Range &range)
+{
+    return range.isValid() && cursorInDocument(document, range.start()) && cursorInDocument(document, range.end()) && range.start() <= range.end();
+}
+
 [[nodiscard]] QString sanitizedErrorDetail(QString detail)
 {
     return redactSensitiveData(std::move(detail));
@@ -138,9 +157,15 @@ InlineEditSession::InlineEditSession(KTextEditor::View *view,
     , m_recentEditsTracker(recentEditsTracker)
     , m_diagnosticStore(diagnosticStore)
 {
+    m_automaticTriggerTimer.setSingleShot(true);
+    connect(&m_automaticTriggerTimer, &QTimer::timeout, this, &InlineEditSession::onAutomaticTriggerTimeout);
+
     if (!m_networkManager) {
         m_networkManager = new QNetworkAccessManager(this);
     }
+
+    m_automaticTriggerTimer.setSingleShot(true);
+    connect(&m_automaticTriggerTimer, &QTimer::timeout, this, &InlineEditSession::onAutomaticTriggerTimeout);
 
     if (m_view) {
         if (QWidget *widget = m_view->editorWidget()) {
@@ -194,78 +219,46 @@ InlineEditSession::~InlineEditSession()
 
 void InlineEditSession::triggerInlineEdit()
 {
-    if (!m_view || !m_plugin || !m_view->document()) {
+    InlineEditTrigger trigger;
+    trigger.kind = InlineEditTriggerKind::Manual;
+    trigger.targetRange = targetRangeForCurrentState();
+    if (m_view && m_view->selection() && m_plugin && m_plugin->settings().validated().autoInlineEditSelections) {
+        trigger.kind = InlineEditTriggerKind::SelectionRepair;
+        trigger.reason = QStringLiteral("Improve or repair the selected code.");
+        trigger.sourceUri = m_view->document() ? documentDisplayPath(m_view->document()) : QString();
+    }
+
+    startInlineEditRequest(trigger, false);
+}
+
+void InlineEditSession::scheduleAutomaticInlineEdit()
+{
+    if (!m_plugin) {
         return;
     }
 
     const CompletionSettings settings = m_plugin->settings().validated();
-    if (!settings.enableInlineEdits) {
-        showInfo(i18n("AI inline edits are disabled"));
+    if (!automaticTriggerGatesOpen(settings) || automaticCooldownActive()) {
         return;
     }
 
-    ensureProvider(settings.provider);
-    if (!m_provider || !providerAllowedForInlineEdits(settings.provider)) {
-        showError(i18n("AI inline edits are unavailable for the selected provider"));
-        return;
+    m_automaticTriggerTimer.start(settings.autoInlineEditDebounceMs);
+}
+
+void InlineEditSession::cancelPendingAutomaticInlineEdit()
+{
+    m_automaticTriggerTimer.stop();
+}
+
+void InlineEditSession::setGhostSuggestionVisible(bool visible)
+{
+    m_ghostSuggestionVisible = visible;
+    if (visible) {
+        cancelPendingAutomaticInlineEdit();
+        if (hasPreview() || hasActiveRequest()) {
+            dismissInlineEdit();
+        }
     }
-
-    const QUrl endpoint = settings.endpoint;
-    const bool providerIsOllama = settings.provider == QString::fromLatin1(CompletionSettings::kProviderOllama);
-    const bool providerIsCopilot = settings.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
-    QString apiKey;
-    if (!providerIsCopilot && m_secretStore) {
-        apiKey = m_secretStore->readApiKey();
-    }
-
-    if (!providerIsOllama && !providerIsCopilot && !isLocalEndpoint(endpoint) && apiKey.trimmed().isEmpty()) {
-        showError(i18n("AI inline edit requires an API key for endpoint: %1", safeDisplayUrl(endpoint)));
-        return;
-    }
-
-    if (providerIsCopilot && (!m_copilotAuthManager || !m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
-        showError(i18n("GitHub Copilot requires OAuth sign-in. Open the plugin settings and sign in."));
-        return;
-    }
-
-    const KTextEditor::Range targetRange = targetRangeForCurrentState();
-    if (!targetRange.isValid()) {
-        showError(i18n("AI inline edit target is invalid"));
-        return;
-    }
-
-    cancelActiveRequest();
-    clearPreview();
-
-    const InlineEditRequestContext context = buildRequestContext(targetRange);
-    InlineEditPromptOptions promptOptions;
-    promptOptions.useContext = settings.inlineEditUseContext;
-    promptOptions.maxContextChars = settings.maxContextChars;
-    promptOptions.maxEdits = settings.inlineEditMaxEdits;
-    const InlineEditPrompt prompt = InlineEditPromptBuilder::build(context, promptOptions);
-
-    CompletionRequest request;
-    request.endpoint = endpoint;
-    request.model = settings.model;
-    request.systemPrompt = prompt.systemPrompt;
-    request.userPrompt = prompt.userPrompt;
-    request.temperature = 0.0;
-    request.maxTokens = inlineEditMaxTokens(settings);
-    request.n = 1;
-
-    if (providerIsCopilot) {
-        request.prompt = prompt.systemPrompt + QStringLiteral("\n\n") + prompt.userPrompt;
-        request.suffix.clear();
-        request.nwo = settings.copilotNwo;
-    } else {
-        request.apiKey = apiKey;
-    }
-
-    m_activeResponse.clear();
-    m_activeTargetRange = targetRange;
-    m_activeDocumentRevision = m_view->document()->revision();
-    m_activeRequestId = m_provider->start(request);
-    Q_EMIT requestStateChanged(true);
 }
 
 void InlineEditSession::acceptInlineEdit()
@@ -282,17 +275,24 @@ void InlineEditSession::acceptInlineEdit()
     const InlineEditApplyResult result = InlineEditApplier::apply(document, m_currentSuggestion, options);
     if (!result.ok) {
         clearPreview();
+        startAutomaticCooldown(settings);
         showError(i18n("Failed to apply AI inline edit: %1", sanitizedErrorDetail(result.message)));
         return;
     }
 
     clearPreview();
+    startAutomaticCooldown(settings);
 }
 
 void InlineEditSession::dismissInlineEdit()
 {
+    const bool hadInlineState = hasPreview() || hasActiveRequest();
+    cancelPendingAutomaticInlineEdit();
     cancelActiveRequest();
     clearPreview();
+    if (hadInlineState) {
+        startAutomaticCooldown(m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults());
+    }
 }
 
 bool InlineEditSession::hasPreview() const
@@ -325,6 +325,8 @@ void InlineEditSession::onRequestFinished(quint64 requestId)
         return;
     }
 
+    const bool automaticRequest = m_activeRequestAutomatic;
+    m_activeRequestAutomatic = false;
     m_activeRequestId = 0;
     Q_EMIT requestStateChanged(false);
 
@@ -345,16 +347,20 @@ void InlineEditSession::onRequestFinished(quint64 requestId)
         m_activeTargetRange = KTextEditor::Range::invalid();
         m_activeDocumentRevision = -1;
         clearPreview();
+        if (automaticRequest) {
+            startAutomaticCooldown(settings);
+        }
         showError(i18n("AI inline edit response did not contain a valid edit"));
         return;
     }
 
     parsed.edits = validation.edits;
-    parsed.source = QStringLiteral("manual");
+    parsed.source = automaticRequest ? QStringLiteral("automatic") : QStringLiteral("manual");
     m_previewDocumentRevision = m_activeDocumentRevision;
     m_activeResponse.clear();
     m_activeTargetRange = KTextEditor::Range::invalid();
     m_activeDocumentRevision = -1;
+    m_activeRequestAutomatic = false;
     setPreview(parsed);
 }
 
@@ -364,12 +370,17 @@ void InlineEditSession::onRequestFailed(quint64 requestId, const QString &messag
         return;
     }
 
+    const bool automaticRequest = m_activeRequestAutomatic;
+    m_activeRequestAutomatic = false;
     m_activeRequestId = 0;
     m_activeResponse.clear();
     m_activeTargetRange = KTextEditor::Range::invalid();
     m_activeDocumentRevision = -1;
     Q_EMIT requestStateChanged(false);
     clearPreview();
+    if (automaticRequest) {
+        startAutomaticCooldown(m_plugin ? m_plugin->settings().validated() : CompletionSettings::defaults());
+    }
     showError(i18n("AI inline edit request failed: %1", sanitizedErrorDetail(message)));
 }
 
@@ -378,6 +389,7 @@ void InlineEditSession::onCursorPositionChanged(KTextEditor::View *view, KTextEd
     Q_UNUSED(cursor);
     if (view == m_view) {
         dismissInlineEdit();
+        scheduleAutomaticInlineEdit();
     }
 }
 
@@ -389,6 +401,7 @@ void InlineEditSession::onDocumentTextChanged(KTextEditor::Document *document)
 
     if (m_view && document == m_view->document()) {
         dismissInlineEdit();
+        scheduleAutomaticInlineEdit();
     }
 }
 
@@ -404,6 +417,32 @@ void InlineEditSession::onSelectionChanged(KTextEditor::View *view)
     if (view == m_view) {
         dismissInlineEdit();
     }
+}
+
+void InlineEditSession::onAutomaticTriggerTimeout()
+{
+    if (!m_plugin) {
+        return;
+    }
+
+    const CompletionSettings settings = m_plugin->settings().validated();
+    if (!automaticTriggerGatesOpen(settings) || automaticCooldownActive()) {
+        return;
+    }
+
+    const InlineEditTriggerRequest request = buildTriggerRequest();
+    const std::optional<InlineEditTrigger> trigger = InlineEditTriggerEngine::choose(request, settings);
+    if (!trigger) {
+        return;
+    }
+
+    const QString key = automaticTriggerKey(*trigger);
+    if (!key.isEmpty() && key == m_lastAutomaticTriggerKey) {
+        return;
+    }
+
+    m_lastAutomaticTriggerKey = key;
+    startInlineEditRequest(*trigger, true);
 }
 
 void InlineEditSession::ensureProvider(const QString &providerId)
@@ -439,6 +478,7 @@ void InlineEditSession::cancelActiveRequest()
     m_activeResponse.clear();
     m_activeTargetRange = KTextEditor::Range::invalid();
     m_activeDocumentRevision = -1;
+    m_activeRequestAutomatic = false;
 
     if (requestId != 0 && m_provider) {
         m_provider->cancel(requestId);
@@ -470,6 +510,203 @@ void InlineEditSession::setPreview(const InlineEditSuggestion &suggestion)
     if (wasActive != hasPreview()) {
         Q_EMIT previewStateChanged(hasPreview());
     }
+}
+
+void InlineEditSession::startInlineEditRequest(const InlineEditTrigger &trigger, bool automatic)
+{
+    if (!m_view || !m_plugin || !m_view->document()) {
+        return;
+    }
+
+    const CompletionSettings settings = m_plugin->settings().validated();
+    if (!settings.enableInlineEdits) {
+        if (!automatic) {
+            showInfo(i18n("AI inline edits are disabled"));
+        }
+        return;
+    }
+
+    if (automatic && (!settings.enableAutomaticInlineEdits || !automaticTriggerGatesOpen(settings) || automaticCooldownActive())) {
+        return;
+    }
+
+    ensureProvider(settings.provider);
+    if (!m_provider || !providerAllowedForInlineEdits(settings.provider)) {
+        if (!automatic) {
+            showError(i18n("AI inline edits are unavailable for the selected provider"));
+        }
+        return;
+    }
+
+    const QUrl endpoint = settings.endpoint;
+    const bool providerIsOllama = settings.provider == QString::fromLatin1(CompletionSettings::kProviderOllama);
+    const bool providerIsCopilot = settings.provider == QString::fromLatin1(CompletionSettings::kProviderGitHubCopilotCodex);
+    QString apiKey;
+    if (!providerIsCopilot && m_secretStore) {
+        apiKey = m_secretStore->readApiKey();
+    }
+
+    if (!providerIsOllama && !providerIsCopilot && !isLocalEndpoint(endpoint) && apiKey.trimmed().isEmpty()) {
+        if (!automatic) {
+            showError(i18n("AI inline edit requires an API key for endpoint: %1", safeDisplayUrl(endpoint)));
+        }
+        return;
+    }
+
+    if (providerIsCopilot && (!m_copilotAuthManager || !m_secretStore || !m_secretStore->hasGitHubOAuthToken())) {
+        if (!automatic) {
+            showError(i18n("GitHub Copilot requires OAuth sign-in. Open the plugin settings and sign in."));
+        }
+        return;
+    }
+
+    const KTextEditor::Range targetRange = resolvedTargetRangeForTrigger(trigger);
+    if (!targetRange.isValid()) {
+        if (!automatic) {
+            showError(i18n("AI inline edit target is invalid"));
+        }
+        return;
+    }
+
+    cancelPendingAutomaticInlineEdit();
+    cancelActiveRequest();
+    clearPreview();
+
+    const InlineEditRequestContext context = buildRequestContext(targetRange);
+    InlineEditPromptOptions promptOptions;
+    promptOptions.useContext = settings.inlineEditUseContext;
+    promptOptions.maxContextChars = settings.maxContextChars;
+    promptOptions.maxEdits = settings.inlineEditMaxEdits;
+    promptOptions.maxTriggerPromptChars = settings.autoInlineEditMaxPromptChars;
+    promptOptions.trigger = trigger;
+    const InlineEditPrompt prompt = InlineEditPromptBuilder::build(context, promptOptions);
+
+    CompletionRequest request;
+    request.endpoint = endpoint;
+    request.model = settings.model;
+    request.systemPrompt = prompt.systemPrompt;
+    request.userPrompt = prompt.userPrompt;
+    request.temperature = 0.0;
+    request.maxTokens = inlineEditMaxTokens(settings);
+    request.n = 1;
+
+    if (providerIsCopilot) {
+        request.prompt = prompt.systemPrompt + QStringLiteral("\n\n") + prompt.userPrompt;
+        request.suffix.clear();
+        request.nwo = settings.copilotNwo;
+    } else {
+        request.apiKey = apiKey;
+    }
+
+    m_activeResponse.clear();
+    m_activeTargetRange = targetRange;
+    m_activeDocumentRevision = m_view->document()->revision();
+    m_activeRequestAutomatic = automatic;
+    m_activeRequestId = m_provider->start(request);
+    Q_EMIT requestStateChanged(true);
+}
+
+void InlineEditSession::startAutomaticCooldown(const CompletionSettings &settings)
+{
+    const int cooldownMs = settings.validated().autoInlineEditCooldownMs;
+    if (cooldownMs <= 0) {
+        m_automaticCooldownUntilMs = 0;
+        return;
+    }
+
+    m_automaticCooldownUntilMs = QDateTime::currentMSecsSinceEpoch() + cooldownMs;
+}
+
+InlineEditTriggerRequest InlineEditSession::buildTriggerRequest() const
+{
+    InlineEditTriggerRequest request;
+    if (!m_view || !m_view->document()) {
+        return request;
+    }
+
+    KTextEditor::Document *document = m_view->document();
+    request.filePath = documentDisplayPath(document);
+    request.languageId = document->highlightingMode();
+    request.cursor = m_view->cursorPosition();
+    request.hasSelection = m_view->selection();
+    request.selectionRange = request.hasSelection ? m_view->selectionRange() : KTextEditor::Range::invalid();
+    request.documentRevision = static_cast<int>(qBound<qint64>(0LL, document->revision(), static_cast<qint64>(std::numeric_limits<int>::max())));
+    if (m_diagnosticStore) {
+        request.diagnostics = m_diagnosticStore->diagnostics(request.filePath);
+    }
+    if (m_recentEditsTracker) {
+        request.recentEdits = m_recentEditsTracker->recentEdits();
+    }
+    return request;
+}
+
+KTextEditor::Range InlineEditSession::resolvedTargetRangeForTrigger(const InlineEditTrigger &trigger) const
+{
+    if (!m_view || !m_view->document()) {
+        return KTextEditor::Range::invalid();
+    }
+
+    if (trigger.targetRange.isValid() && trigger.targetRange.start() < trigger.targetRange.end()) {
+        return rangeInDocument(m_view->document(), trigger.targetRange) ? trigger.targetRange : KTextEditor::Range::invalid();
+    }
+
+    if (trigger.targetRange.isValid()) {
+        return currentLineRange(trigger.targetRange.start().line());
+    }
+
+    return targetRangeForCurrentState();
+}
+
+KTextEditor::Range InlineEditSession::currentLineRange(int line) const
+{
+    if (!m_view || !m_view->document() || line < 0 || line >= m_view->document()->lines()) {
+        return KTextEditor::Range::invalid();
+    }
+
+    return KTextEditor::Range(line, 0, line, boundedSize(m_view->document()->line(line).size()));
+}
+
+bool InlineEditSession::automaticTriggerGatesOpen(const CompletionSettings &settings) const
+{
+    if (!m_view || !m_view->document()) {
+        return false;
+    }
+
+    const CompletionSettings v = settings.validated();
+    if (!v.enableInlineEdits || !v.enableAutomaticInlineEdits || m_ghostSuggestionVisible || hasPreview() || hasActiveRequest()) {
+        return false;
+    }
+
+    if (m_view->selection()) {
+        return false;
+    }
+
+    if (v.suppressWhenCompletionPopupVisible && m_view->isCompletionActive()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool InlineEditSession::automaticCooldownActive() const
+{
+    return m_automaticCooldownUntilMs > QDateTime::currentMSecsSinceEpoch();
+}
+
+QString InlineEditSession::automaticTriggerKey(const InlineEditTrigger &trigger) const
+{
+    if (!m_view || !m_view->document()) {
+        return {};
+    }
+
+    const KTextEditor::Cursor cursor = m_view->cursorPosition();
+    const QString discriminator = trigger.kind == InlineEditTriggerKind::DiagnosticRepair ? trigger.diagnosticMessage : trigger.recentEditSummary;
+    return QStringLiteral("%1:%2:%3:%4:%5")
+        .arg(documentDisplayPath(m_view->document()),
+             QString::number(cursor.line()),
+             inlineEditTriggerKindName(trigger.kind),
+             trigger.sourceUri,
+             QString::number(qHash(discriminator)));
 }
 
 InlineEditRequestContext InlineEditSession::buildRequestContext(const KTextEditor::Range &targetRange) const

@@ -7,6 +7,7 @@
 
 #include "context/DiagnosticStore.h"
 #include "context/RecentEditsTracker.h"
+#include "inlineedit/InlineEditSession.h"
 #include "plugin/KateAiInlineCompletionPlugin.h"
 #include "render/GhostTextOverlayWidget.h"
 #include "session/CompletionCache.h"
@@ -41,6 +42,7 @@ using KateAiInlineCompletion::CompletionSettings;
 using KateAiInlineCompletion::DiagnosticStore;
 using KateAiInlineCompletion::EditorSession;
 using KateAiInlineCompletion::GhostTextOverlayWidget;
+using KateAiInlineCompletion::InlineEditSession;
 using KateAiInlineCompletion::RecentEditsTracker;
 
 namespace
@@ -245,6 +247,7 @@ struct SessionHarness {
     RecentEditsTracker recentEditsTracker;
     DiagnosticStore diagnosticStore;
     EditorSession *session = nullptr;
+    InlineEditSession *inlineEditSession = nullptr;
     GhostTextOverlayWidget *overlay = nullptr;
 
     explicit SessionHarness(const QUrl &endpoint, bool initiallyEnabled = true)
@@ -277,8 +280,13 @@ struct SessionHarness {
         settings.suppressWhenCompletionPopupVisible = false;
         plugin.setSettings(settings);
 
+        doc->setProperty("_kate_ai_inline_edit_stable_untitled_document_id", QStringLiteral("/tmp/editor-session.cpp"));
         recentEditsTracker.trackDocument(doc.data(), QStringLiteral("/tmp/editor-session.cpp"));
         session = new EditorSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, &completionCache, view);
+        inlineEditSession = new InlineEditSession(view, &plugin, nullptr, &manager, nullptr, &recentEditsTracker, &diagnosticStore, view);
+        QObject::connect(session, &EditorSession::suggestionVisibilityChanged, inlineEditSession, [this] {
+            inlineEditSession->setGhostSuggestionVisible(session->hasVisibleSuggestion());
+        });
         overlay = view->editorWidget()->findChild<GhostTextOverlayWidget *>();
         QVERIFY2(overlay, "Ghost text overlay widget was not created");
 
@@ -318,6 +326,7 @@ private Q_SLOTS:
     void acceptingAfterCyclingInsertsSelectedCandidate();
     void partialAcceptAfterCyclingKeepsSelectedCandidate();
     void speculativeRequestStoresNextSuggestionInCacheOnly();
+    void candidateCyclingStillWorksAfterInlineEditDismissal();
     void typingPrefixOfVisibleSuggestionKeepsRemainingSuggestionWithoutRequest();
     void typingDuringStreamingKeepsRequestAndUsesLaterDeltas();
     void typingNonmatchingTextClearsSuggestionAndSchedulesRequest();
@@ -593,6 +602,36 @@ void EditorSessionIntegrationTest::partialAcceptAfterCyclingKeepsSelectedCandida
     harness.session->acceptNextWord();
     QTRY_VERIFY_WITH_TIMEOUT(harness.doc->text().contains(QStringLiteral("prefixshared SUFFIX")), 2000);
     QTRY_COMPARE_WITH_TIMEOUT(harness.overlay->state().visibleText, QStringLiteral("second\nline"), 2000);
+}
+
+void EditorSessionIntegrationTest::candidateCyclingStillWorksAfterInlineEditDismissal()
+{
+    FakeSseServer server;
+    QVERIFY(server.listen());
+    server.enqueueCompletion(QStringLiteral(R"({"edits":[{"startLine":1,"startColumn":1,"endLine":1,"endColumn":7,"newText":"PREFIX"}]})"));
+    server.enqueueCompletionChoices({QStringLiteral("CandidateOne"), QStringLiteral("CandidateTwo")});
+
+    SessionHarness harness(server.endpoint());
+    CompletionSettings settings = harness.plugin.settings().validated();
+    settings.enableInlineEdits = true;
+    settings.enableCandidateCycling = true;
+    settings.manualCandidateCount = 2;
+    harness.plugin.setSettings(settings);
+
+    harness.view->setSelection(KTextEditor::Range(0, 0, 0, 6));
+    harness.inlineEditSession->triggerInlineEdit();
+    QTRY_VERIFY_WITH_TIMEOUT(harness.inlineEditSession->hasPreview(), 2000);
+    harness.inlineEditSession->dismissInlineEdit();
+    QVERIFY(!harness.inlineEditSession->hasPreview());
+
+    harness.view->removeSelection();
+    harness.view->setCursorPosition(KTextEditor::Cursor(0, 6));
+    harness.session->triggerSuggestion();
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->hasVisibleSuggestion(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(harness.session->candidateCount(), 2, 2000);
+    harness.session->selectNextCandidate();
+    QCOMPARE(harness.session->candidateCount(), 2);
 }
 
 void EditorSessionIntegrationTest::speculativeRequestStoresNextSuggestionInCacheOnly()

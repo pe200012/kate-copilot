@@ -371,6 +371,46 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
                                           KateAiInlineCompletion::CompletionSettings::kInlineEditPreviewMaxLinesMax);
     inlineEditForm->addRow(i18n("Preview max changed lines"), m_inlineEditPreviewMaxLines);
 
+    m_enableAutomaticInlineEdits = new QCheckBox(i18n("Enable automatic inline edits"), m_inlineEditBox);
+    m_enableAutomaticInlineEdits->setObjectName(QStringLiteral("automaticInlineEditsCheckBox"));
+    inlineEditForm->addRow(m_enableAutomaticInlineEdits);
+
+    m_autoInlineEditDiagnostics = new QCheckBox(i18n("Trigger from diagnostics"), m_inlineEditBox);
+    m_autoInlineEditDiagnostics->setObjectName(QStringLiteral("autoInlineEditDiagnosticsCheckBox"));
+    inlineEditForm->addRow(m_autoInlineEditDiagnostics);
+
+    m_autoInlineEditWarnings = new QCheckBox(i18n("Include warnings"), m_inlineEditBox);
+    m_autoInlineEditWarnings->setObjectName(QStringLiteral("autoInlineEditWarningsCheckBox"));
+    inlineEditForm->addRow(m_autoInlineEditWarnings);
+
+    m_autoInlineEditRecentEdits = new QCheckBox(i18n("Trigger from recent edits"), m_inlineEditBox);
+    m_autoInlineEditRecentEdits->setObjectName(QStringLiteral("autoInlineEditRecentEditsCheckBox"));
+    inlineEditForm->addRow(m_autoInlineEditRecentEdits);
+
+    m_autoInlineEditSelections = new QCheckBox(i18n("Trigger for selections"), m_inlineEditBox);
+    m_autoInlineEditSelections->setObjectName(QStringLiteral("autoInlineEditSelectionsCheckBox"));
+    inlineEditForm->addRow(m_autoInlineEditSelections);
+
+    m_autoInlineEditDebounceMs = new QSpinBox(m_inlineEditBox);
+    m_autoInlineEditDebounceMs->setObjectName(QStringLiteral("autoInlineEditDebounceSpinBox"));
+    m_autoInlineEditDebounceMs->setRange(KateAiInlineCompletion::CompletionSettings::kAutoInlineEditDebounceMinMs,
+                                         KateAiInlineCompletion::CompletionSettings::kAutoInlineEditDebounceMaxMs);
+    m_autoInlineEditDebounceMs->setSuffix(i18n(" ms"));
+    inlineEditForm->addRow(i18n("Automatic debounce"), m_autoInlineEditDebounceMs);
+
+    m_autoInlineEditCooldownMs = new QSpinBox(m_inlineEditBox);
+    m_autoInlineEditCooldownMs->setObjectName(QStringLiteral("autoInlineEditCooldownSpinBox"));
+    m_autoInlineEditCooldownMs->setRange(KateAiInlineCompletion::CompletionSettings::kAutoInlineEditCooldownMinMs,
+                                         KateAiInlineCompletion::CompletionSettings::kAutoInlineEditCooldownMaxMs);
+    m_autoInlineEditCooldownMs->setSuffix(i18n(" ms"));
+    inlineEditForm->addRow(i18n("Automatic cooldown"), m_autoInlineEditCooldownMs);
+
+    m_autoInlineEditDiagnosticLineDistance = new QSpinBox(m_inlineEditBox);
+    m_autoInlineEditDiagnosticLineDistance->setObjectName(QStringLiteral("autoInlineEditDiagnosticLineDistanceSpinBox"));
+    m_autoInlineEditDiagnosticLineDistance->setRange(KateAiInlineCompletion::CompletionSettings::kAutoInlineEditDiagnosticLineDistanceMin,
+                                                     KateAiInlineCompletion::CompletionSettings::kAutoInlineEditDiagnosticLineDistanceMax);
+    inlineEditForm->addRow(i18n("Diagnostic line distance"), m_autoInlineEditDiagnosticLineDistance);
+
     m_inlineEditUseContext = new QCheckBox(i18n("Use contextual prompt for inline edits"), m_inlineEditBox);
     m_inlineEditUseContext->setObjectName(QStringLiteral("inlineEditUseContextCheckBox"));
     inlineEditForm->addRow(m_inlineEditUseContext);
@@ -592,6 +632,14 @@ KateAiConfigPage::KateAiConfigPage(QWidget *parent, KateAiInlineCompletionPlugin
     connect(m_inlineEditMaxSuffixChars, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditAllowDeletion, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditPreviewMaxLines, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_enableAutomaticInlineEdits, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditDiagnostics, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditWarnings, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditRecentEdits, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditSelections, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditDebounceMs, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditCooldownMs, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
+    connect(m_autoInlineEditDiagnosticLineDistance, qOverload<int>(&QSpinBox::valueChanged), this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditUseContext, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
     connect(m_inlineEditCopilotExperimental, &QCheckBox::toggled, this, &KateAiConfigPage::slotUiChanged);
 
@@ -945,6 +993,14 @@ void KateAiConfigPage::loadUi(const KateAiInlineCompletion::CompletionSettings &
     m_inlineEditMaxSuffixChars->setValue(v.inlineEditMaxSuffixChars);
     m_inlineEditAllowDeletion->setChecked(v.inlineEditAllowDeletion);
     m_inlineEditPreviewMaxLines->setValue(v.inlineEditPreviewMaxLines);
+    m_enableAutomaticInlineEdits->setChecked(v.enableAutomaticInlineEdits);
+    m_autoInlineEditDiagnostics->setChecked(v.autoInlineEditDiagnostics);
+    m_autoInlineEditWarnings->setChecked(v.autoInlineEditWarnings);
+    m_autoInlineEditRecentEdits->setChecked(v.autoInlineEditRecentEdits);
+    m_autoInlineEditSelections->setChecked(v.autoInlineEditSelections);
+    m_autoInlineEditDebounceMs->setValue(v.autoInlineEditDebounceMs);
+    m_autoInlineEditCooldownMs->setValue(v.autoInlineEditCooldownMs);
+    m_autoInlineEditDiagnosticLineDistance->setValue(v.autoInlineEditDiagnosticLineDistance);
     m_inlineEditUseContext->setChecked(v.inlineEditUseContext);
     m_inlineEditCopilotExperimental->setChecked(v.inlineEditCopilotExperimental);
 
@@ -1013,6 +1069,14 @@ KateAiInlineCompletion::CompletionSettings KateAiConfigPage::readUi() const
     s.inlineEditMaxSuffixChars = m_inlineEditMaxSuffixChars->value();
     s.inlineEditAllowDeletion = m_inlineEditAllowDeletion->isChecked();
     s.inlineEditPreviewMaxLines = m_inlineEditPreviewMaxLines->value();
+    s.enableAutomaticInlineEdits = m_enableAutomaticInlineEdits->isChecked();
+    s.autoInlineEditDiagnostics = m_autoInlineEditDiagnostics->isChecked();
+    s.autoInlineEditWarnings = m_autoInlineEditWarnings->isChecked();
+    s.autoInlineEditRecentEdits = m_autoInlineEditRecentEdits->isChecked();
+    s.autoInlineEditSelections = m_autoInlineEditSelections->isChecked();
+    s.autoInlineEditDebounceMs = m_autoInlineEditDebounceMs->value();
+    s.autoInlineEditCooldownMs = m_autoInlineEditCooldownMs->value();
+    s.autoInlineEditDiagnosticLineDistance = m_autoInlineEditDiagnosticLineDistance->value();
     s.inlineEditUseContext = m_inlineEditUseContext->isChecked();
     s.inlineEditCopilotExperimental = m_inlineEditCopilotExperimental->isChecked();
 
@@ -1103,6 +1167,7 @@ void KateAiConfigPage::updateInlineEditControlsUi()
     }
 
     const bool inlineEditsEnabled = m_enableInlineEdits->isChecked();
+    const bool automaticEnabled = inlineEditsEnabled && m_enableAutomaticInlineEdits->isChecked();
     m_inlineEditMaxNewTextChars->setEnabled(inlineEditsEnabled);
     m_inlineEditMaxEdits->setEnabled(inlineEditsEnabled);
     m_inlineEditMaxTotalNewTextChars->setEnabled(inlineEditsEnabled);
@@ -1110,6 +1175,14 @@ void KateAiConfigPage::updateInlineEditControlsUi()
     m_inlineEditMaxSuffixChars->setEnabled(inlineEditsEnabled);
     m_inlineEditAllowDeletion->setEnabled(inlineEditsEnabled);
     m_inlineEditPreviewMaxLines->setEnabled(inlineEditsEnabled);
+    m_enableAutomaticInlineEdits->setEnabled(inlineEditsEnabled);
+    m_autoInlineEditDiagnostics->setEnabled(automaticEnabled);
+    m_autoInlineEditWarnings->setEnabled(automaticEnabled);
+    m_autoInlineEditRecentEdits->setEnabled(automaticEnabled);
+    m_autoInlineEditSelections->setEnabled(automaticEnabled);
+    m_autoInlineEditDebounceMs->setEnabled(automaticEnabled);
+    m_autoInlineEditCooldownMs->setEnabled(automaticEnabled);
+    m_autoInlineEditDiagnosticLineDistance->setEnabled(automaticEnabled);
     m_inlineEditUseContext->setEnabled(inlineEditsEnabled);
     m_inlineEditCopilotExperimental->setEnabled(inlineEditsEnabled);
 }
