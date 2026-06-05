@@ -21,6 +21,7 @@ private Q_SLOTS:
     void parsesSingleMessageCrlf();
     void parsesChunkedInput();
     void joinsMultiLineData();
+    void parsesDataFieldWithoutColonAsEmptyMessage();
 };
 
 void SSEParserTest::parsesSingleMessageLf()
@@ -61,6 +62,16 @@ void SSEParserTest::joinsMultiLineData()
 
     QCOMPARE(out.size(), 1);
     QCOMPARE(out[0].data, QStringLiteral("a\nb"));
+}
+
+void SSEParserTest::parsesDataFieldWithoutColonAsEmptyMessage()
+{
+    SSEParser p;
+    const QVector<SSEMessage> out = p.feed(QByteArray("data\n\n"));
+
+    QCOMPARE(out.size(), 1);
+    QCOMPARE(out[0].event, QString());
+    QCOMPARE(out[0].data, QString());
 }
 
 QTEST_MAIN(SSEParserTest)

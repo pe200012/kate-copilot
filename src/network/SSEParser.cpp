@@ -7,10 +7,32 @@
 
 #include "network/SSEParser.h"
 
-#include <QStringList>
+#include <cstring>
 
 namespace KateAiInlineCompletion
 {
+
+namespace
+{
+[[nodiscard]] bool lineStartsWith(const QByteArray &block, qsizetype start, qsizetype lineLen, const char *prefix, qsizetype prefixLen)
+{
+    return lineLen >= prefixLen && std::memcmp(block.constData() + start, prefix, static_cast<size_t>(prefixLen)) == 0;
+}
+
+void appendDataField(QString &data, bool &hasData, const QByteArray &block, qsizetype payloadStart, qsizetype payloadEnd)
+{
+    if (payloadStart < payloadEnd && block[payloadStart] == ' ') {
+        ++payloadStart;
+    }
+
+    if (hasData) {
+        data.append(QLatin1Char('\n'));
+    }
+
+    data.append(QString::fromUtf8(block.constData() + payloadStart, payloadEnd - payloadStart));
+    hasData = true;
+}
+} // namespace
 
 qsizetype SSEParser::findBoundary(const QByteArray &buffer, qsizetype *separatorLen)
 {
@@ -54,41 +76,45 @@ QVector<SSEMessage> SSEParser::feed(const QByteArray &chunk)
         }
 
         QString eventName;
-        QStringList dataLines;
+        QString data;
+        bool hasData = false;
 
-        const QList<QByteArray> lines = block.split('\n');
-        for (QByteArray line : lines) {
-            if (line.endsWith('\r')) {
-                line.chop(1);
+        qsizetype lineStart = 0;
+        while (lineStart <= block.size()) {
+            qsizetype lineStop = block.indexOf('\n', lineStart);
+            if (lineStop < 0) {
+                lineStop = block.size();
             }
 
-            if (line.startsWith(':')) {
-                continue;
+            qsizetype lineEnd = lineStop;
+            if (lineEnd > lineStart && block[lineEnd - 1] == '\r') {
+                --lineEnd;
             }
 
-            if (line.startsWith("event:")) {
-                eventName = QString::fromUtf8(line.mid(6)).trimmed();
-                continue;
-            }
-
-            if (line.startsWith("data:")) {
-                QByteArray payload = line.mid(5);
-                if (!payload.isEmpty() && payload[0] == ' ') {
-                    payload = payload.mid(1);
+            const qsizetype lineLen = lineEnd - lineStart;
+            if (lineLen > 0 && block[lineStart] != ':') {
+                if (lineStartsWith(block, lineStart, lineLen, "event:", 6)) {
+                    eventName = QString::fromUtf8(block.constData() + lineStart + 6, lineEnd - lineStart - 6).trimmed();
+                } else if (lineStartsWith(block, lineStart, lineLen, "data:", 5)) {
+                    appendDataField(data, hasData, block, lineStart + 5, lineEnd);
+                } else if (lineLen == 4 && lineStartsWith(block, lineStart, lineLen, "data", 4)) {
+                    appendDataField(data, hasData, block, lineEnd, lineEnd);
                 }
-
-                dataLines.push_back(QString::fromUtf8(payload));
-                continue;
             }
+
+            if (lineStop == block.size()) {
+                break;
+            }
+            lineStart = lineStop + 1;
         }
 
-        if (dataLines.isEmpty()) {
+        if (!hasData) {
             continue;
         }
 
         SSEMessage msg;
         msg.event = eventName;
-        msg.data = dataLines.join(QStringLiteral("\n"));
+        msg.data = data;
         out.push_back(msg);
     }
 
